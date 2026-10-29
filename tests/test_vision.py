@@ -196,6 +196,18 @@ class MapNodeTest(unittest.TestCase):
         self.assertAlmostEqual(895, x, delta=3)
         self.assertAlmostEqual(615, y, delta=3)
 
+    def test_train_template_on_red_theme(self):
+        tpl = cv2.imread('assets/lc/map_train.png', cv2.IMREAD_UNCHANGED)
+        frame = np.full((1440, 2560, 3), (20, 20, 90), np.uint8)       # 紅色主題背景
+        big = vision.scale_template(tpl, 1440)
+        h, w = big.shape[:2]
+        x0, y0 = 1100, 500
+        alpha = big[:, :, 3:4] > 127
+        frame[y0:y0 + h, x0:x0 + w] = np.where(alpha, big[:, :, :3], frame[y0:y0 + h, x0:x0 + w])
+        x, y = vision.find_train_node(frame, tpl)
+        self.assertAlmostEqual(x0 + w * vision.TRAIN_NODE_OFFSET[0], x, delta=4)
+        self.assertAlmostEqual(y0 + h * vision.TRAIN_NODE_OFFSET[1], y, delta=4)
+
     def test_nothing_lit(self):
         frame = np.full((1080, 1920, 3), (40, 35, 20), np.uint8)
         self.assertEqual([], vision.find_reachable_nodes(frame))
@@ -256,6 +268,27 @@ class GiftIconTest(unittest.TestCase):
             x = int(1000 - 0.7 * s + n * 12)
             frame[int(700 - 0.7 * s):int(700 - 0.3 * s), x:x + 5] = (40, 200, 240)
         self.assertEqual(3, vision.gift_tier(frame, (1000, 700)))
+
+
+class RewardTest(unittest.TestCase):
+    def test_classify_card(self):
+        from src.lc import rewards
+        self.assertEqual('星芒', rewards.classify_card('清剿镜像迷宫时，额外获得6~8星芒'))
+        self.assertEqual('飾品', rewards.classify_card('随机获得一件2级E.G.O饰品'))
+        self.assertEqual('機率飾品', rewards.classify_card('有50%概率获得E.G.O饰品'))
+        self.assertEqual('經費', rewards.classify_card('获得100经费'))
+
+    def test_rank_by_affliction(self):
+        from src.lc.rewards import AFFLICTION_DEFAULT, GiftReward, rank_gift_rewards
+        cards = [GiftReward(0, 2, '流血', '守备技能强化 守备技能最终威力+1', 2),
+                 GiftReward(1, 1, '震颤', '攻击等级强化I 攻击等级+1', 1),
+                 GiftReward(2, 1, '呼吸法', '生长I 体力上限+5%', 1),
+                 GiftReward(3, 2, None, '防御等级强化 防御等级+2', 1)]
+        order = [c.index for c in rank_gift_rewards(cards, '苦難', AFFLICTION_DEFAULT, [])]
+        self.assertEqual([2, 3, 0, 1], order)
+        order = [c.index for c in rank_gift_rewards(cards, '飾品', AFFLICTION_DEFAULT, ['震颤'])]
+        self.assertEqual(1, order[0])
+        self.assertEqual([1, 3, 0, 2], order)
 
 
 class KeywordsRegexTest(unittest.TestCase):

@@ -16,6 +16,7 @@ from src.lc.layout import (PACK_DRAG_FROM_Y, PACK_DRAG_TO_Y, PACK_MODE_ARROW, PA
                            EVENT_OPTION_GAP, EVENT_SKIP_BTN, NODE_ENTER_BTN,
                            MAP_CENTER, MAP_ZOOM_SCROLLS, NODE_MATCH_THRESHOLD, NODE_TYPES, NODE_UNKNOWN)
 from src.tasks.LimbusBaseTask import TEMPLATE_DIR, LimbusBaseTask, TaskFailed
+from src.tasks.mirror_rewards import REWARD_DEFAULTS, REWARD_DESCRIPTIONS, REWARD_TYPES, MirrorRewardMixin
 from src.tasks.mirror_shop import SHOP_DEFAULTS, SHOP_DESCRIPTIONS, SHOP_TYPES, MirrorShopMixin
 
 IN_PROGRESS_CONTINUE = '繼續探索'
@@ -58,7 +59,7 @@ def parse_grace_line(text: str):
     return None
 
 
-class MirrorDungeonTask(MirrorShopMixin, LimbusBaseTask):
+class MirrorDungeonTask(MirrorShopMixin, MirrorRewardMixin, LimbusBaseTask):
     """鏡像迷宮 (目前做到「進入迷宮」為止，迷宮裡的流程之後再加)。
 
     主畫面 → Drive → 镜像迷宫 → 进入
@@ -81,6 +82,7 @@ class MirrorDungeonTask(MirrorShopMixin, LimbusBaseTask):
             'Pack Use Refresh': True,
             'Pack Use Observe': False,
             'Node Priority': list(NODE_DEFAULT),
+            'Map Lookahead': True,
             'Event Priority': list(EVENT_DEFAULT),
             'Battle Timeout (s)': 400,
         })
@@ -104,6 +106,7 @@ class MirrorDungeonTask(MirrorShopMixin, LimbusBaseTask):
             'Node Priority': '樓層地圖上有好幾條路時，優先走哪種節點，一行一個，越上面越優先。'
                              '可用：' + '、'.join(list(NODE_TYPES) + [NODE_UNKNOWN])
                              + '。沒列到的排最後，一樣優先時走上面那條',
+            'Map Lookahead': '選路時也看再下一步：分數 = 下個節點的順位 + 它連到的最好節點的順位，越小越好',
             'Event Priority': '事件選項的優先順序，一行一個，看選項下面的小字分類：'
                               + '、'.join(vision.EVENT_KINDS)
                               + '。「其他」= 沒有小字或沒見過的 (會存到 screenshots/event_options 給你看)',
@@ -142,14 +145,16 @@ class MirrorDungeonTask(MirrorShopMixin, LimbusBaseTask):
         })
         # 設定畫面照流程順序顯示：恩惠 → 饰品观测 → 卡包 (各層想要的 → 避開 → 刷新/觀測)
         pack_keys = (['Pack Difficulty'] + [pack_key(f) for f in pack_data.FLOORS]
-                     + ['Pack Avoid', 'Pack Use Refresh', 'Pack Use Observe', 'Node Priority',
+                     + ['Pack Avoid', 'Pack Use Refresh', 'Pack Use Observe', 'Node Priority', 'Map Lookahead',
                         'Event Priority', 'Battle Timeout (s)'])
         for key in pack_keys:
             self.default_config[key] = self.default_config.pop(key)
-        # 商店設定放最後
-        self.default_config.update(SHOP_DEFAULTS)
-        self.config_type.update(SHOP_TYPES)
-        self.config_description.update(SHOP_DESCRIPTIONS)
+        # 戰後獎勵、商店設定放最後
+        for defaults, types, descriptions in ((REWARD_DEFAULTS, REWARD_TYPES, REWARD_DESCRIPTIONS),
+                                              (SHOP_DEFAULTS, SHOP_TYPES, SHOP_DESCRIPTIONS)):
+            self.default_config.update(defaults)
+            self.config_type.update(types)
+            self.config_description.update(descriptions)
 
     def run(self):
         self.open_mirror_dungeon()
@@ -199,7 +204,7 @@ class MirrorDungeonTask(MirrorShopMixin, LimbusBaseTask):
         start = time.time()
         while time.time() - start < time_out:
             self.next_frame()
-            if self.handle_gift_popup():
+            if self.handle_gift_popup() or self.handle_rewards():
                 continue
             if self.on_map_screen():
                 return 'map'
@@ -804,6 +809,8 @@ class MirrorDungeonTask(MirrorShopMixin, LimbusBaseTask):
         names = {tpl: name for name, tpl in NODE_TYPES.items()}
         templates = {}
         for path in sorted(TEMPLATE_DIR.glob('map_*.png')):
+            if path.stem == 'map_train':
+                continue
             image = self.load_template(path.stem)
             if image is not None:
                 templates[names.get(path.stem, path.stem[4:])] = image
@@ -821,44 +828,81 @@ class MirrorDungeonTask(MirrorShopMixin, LimbusBaseTask):
         cv2.imencode('.png', icon)[1].tofile(str(path))
         self.log_info(f'不認得的節點圖示已存到 {path}，改名成 assets/lc/map_類型.png 就能辨識 (例如 map_abno.png)')
 
+    def load_train_template(self):
+        path = TEMPLATE_DIR / 'map_train.png'
+        if not path.is_file():
+            return None
+        import numpy as np
+        return cv2.imdecode(np.fromfile(str(path), dtype=np.uint8), cv2.IMREAD_UNCHANGED)
+
+    def kind_name(self, kind, icon=None):
+        if kind is None:
+            if icon is not None:
+                self.save_unknown_node(icon)
+            return NODE_UNKNOWN
+        return kind
+
     def read_map(self):
-        """回傳 [(節點, 類型)]，由上到下。"""
+        """回傳 (目前位置, [(節點, 類型, [下下個節點的類型])])。
+
+        先用火車模板找目前位置，再沿著格子看哪幾條路中間有亮的箭頭 (藍色、紅色主題都可以)；
+        找不到火車時退回舊方法 (只認藍色的亮線)。
+        """
         self.next_frame()
         templates = self.node_templates()
+        tpl = self.load_train_template()
+        train = vision.find_train_node(self.frame, tpl) if tpl is not None else None
         result = []
+        if train is not None:
+            for node, kind, _, follows in vision.read_map_graph(self.frame, train, templates,
+                                                                NODE_MATCH_THRESHOLD):
+                kind = self.kind_name(kind, vision.node_icon(self.frame, node))
+                result.append((node, kind, [self.kind_name(k) for _, k in follows]))
+            return train, result
         for node in vision.find_reachable_nodes(self.frame):
             icon = vision.node_icon(self.frame, node)
             kind, score = vision.classify_node(icon, templates) if templates else (None, 0)
-            if kind is None or score < NODE_MATCH_THRESHOLD:
-                kind = NODE_UNKNOWN
-                self.save_unknown_node(icon)
-            result.append((node, kind))
-        return result
+            result.append((node, self.kind_name(kind if score >= NODE_MATCH_THRESHOLD else None, icon), []))
+        return vision.find_train(self.frame), result
 
     def choose_node(self):
         self.wait_for(self.on_map_screen, time_out=30, what='樓層地圖 (正在探索第N层)')
         self.sleep(1.5)
         self.zoom_out_map()
-        nodes = self.read_map()
+        train, nodes = self.read_map()
         if not nodes:
-            # 沒有亮起的路 = 目前這個節點還沒打完，點自己所在的位置 (紅色火車) 再進去
-            train = vision.find_train(self.frame)
+            # 沒有可以走的路 = 目前這個節點還沒打完，點自己所在的位置 (火車) 再進去
             if train is None:
                 self.screenshot('fail_map_nodes')
-                raise TaskFailed('樓層地圖上找不到可以走的節點，也找不到目前位置 (紅色火車)')
-            self.log_info('沒有亮起的路線，目前節點還沒通過，點目前位置')
+                raise TaskFailed('樓層地圖上找不到可以走的節點，也找不到目前位置 (火車)')
+            self.log_info('沒有可以走的路線，目前節點還沒通過，點目前位置')
             self.info_set('選擇節點', '目前位置')
             self.click(*train, after_sleep=2)
             return '目前位置'
-        boxes = [Box(n.x - n.size // 2, n.y - n.size // 2, n.size, n.size, name=kind) for n, kind in nodes]
+        boxes = [Box(n.x - n.size // 2, n.y - n.size // 2, n.size, n.size, name=kind) for n, kind, _ in nodes]
         self.draw_boxes('map_node', boxes, 'green')
-        self.info_set('可走節點', '、'.join(kind for _, kind in nodes))
 
         priority = [str(line).strip() for line in self.config.get('Node Priority', []) if str(line).strip()]
         rank = {kind: i for i, kind in reversed(list(enumerate(priority)))}
-        node, kind = min(nodes, key=lambda nk: rank.get(nk[1], len(priority)))
-        self.log_info(f'可走節點：{"、".join(k for _, k in nodes)}，選擇：{kind}')
-        self.info_set('選擇節點', kind)
+        worst = len(priority)
+        lookahead = self.config.get('Map Lookahead', True)
+
+        def score(item):
+            _, kind, follows = item
+            first = rank.get(kind, worst)
+            second = min((rank.get(k, worst) for k in follows), default=worst) if lookahead else 0
+            return first + second, first
+
+        def describe(item):
+            _, kind, follows = item
+            return kind + (f'→{"/".join(follows)}' if follows else '')
+
+        best = min(nodes, key=score)
+        summary = '、'.join(describe(n) for n in nodes)
+        self.info_set('可走節點', summary)
+        self.log_info(f'可走節點：{summary}，選擇：{describe(best)}')
+        self.info_set('選擇節點', describe(best))
+        node, kind, _ = best
         # 點節點中間的圖示 (外框下方有立體的邊，所以往上一點)
         self.click(node.x, int(node.y + node.size * vision.NODE_ICON_DY), after_sleep=2)
         return kind
@@ -974,7 +1018,7 @@ class MirrorDungeonTask(MirrorShopMixin, LimbusBaseTask):
                 if got == 'defeat':
                     return got
                 continue
-            if self.handle_gift_popup():
+            if self.handle_gift_popup() or self.handle_rewards():
                 continue
             if self.in_input_phase():
                 self.send_key('p', after_sleep=0.5)

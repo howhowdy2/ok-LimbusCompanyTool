@@ -31,7 +31,7 @@ SHOP_DEFAULTS = {
     'Fuse Tiers': ['4'],
 }
 SHOP_TYPES = {
-    'Shop Keywords': {'type': 'multi_selection', 'options': GIFT_KEYWORDS},
+    'Shop Keywords': {'type': 'drop_down', 'options_available': GIFT_KEYWORDS},   # 清單，可排順序
     'Shop Tiers': {'type': 'multi_selection', 'options': TIER_NAMES},
     'Enhance Level': {'type': 'drop_down', 'options': ENHANCE_LEVELS},
     'Fuse Keyword': {'type': 'drop_down', 'options': GIFT_KEYWORDS},
@@ -40,7 +40,7 @@ SHOP_TYPES = {
 SHOP_DESCRIPTIONS = {
     'Shop Enable': '走到商店時要不要買 / 強化 / 合成 (關掉就直接离开)',
     'Shop Min Money': '最低保留經費：買、強化、刷新前經費低於這個數字就不做，直接离开',
-    'Shop Keywords': '要買哪些關鍵詞的饰品 (看饰品右下角的圖示)，不勾 = 不限；勾多個時照清單順序優先',
+    'Shop Keywords': '要買哪些關鍵詞的饰品 (看饰品右下角的圖示)，越上面越優先；空的 = 不限',
     'Shop Tiers': '要買哪些等級的饰品 (左上角的羅馬數字)，不勾 = 不限',
     'Shop Refreshes': '沒有想買的饰品時，最多按幾次右上「刷新」',
     'Shop Enhance': '買完後用「强化饰品」強化亮起的饰品 (有勾關鍵詞時只強化那些關鍵詞)',

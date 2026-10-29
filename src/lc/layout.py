@@ -100,6 +100,14 @@ ROI = {
     'shop_sub_title': (0.38, 0.10, 0.62, 0.19),    # 「强化E.G.O饰品」「合成E.G.O饰品」「合成 - 关键词选择」
     'enhance_money': (0.73, 0.10, 0.88, 0.18),     # 強化畫面右上的經費 (501 ▸ 451)
     'enhance_cost': (0.17, 0.68, 0.42, 0.75),      # 「是否消耗50经费进行强化?」
+    # 戰鬥後的獎勵
+    'reward_card_title': (0.28, 0.14, 0.56, 0.24),  # 「选择遭遇战奖励卡」
+    'reward_card_count': (0.70, 0.15, 0.82, 0.23),  # 「可选择 0/1」
+    'reward_card_text': (0.10, 0.50, 0.92, 0.60),   # 卡片下方的說明
+    'gift_reward_marker': (0.15, 0.57, 0.92, 0.62), # 每張卡上的「追加的苦难」
+    'gift_reward_level': (0.09, 0.61, 0.91, 0.66),  # 「敌方等级增加 +2」
+    'gift_reward_aff': (0.09, 0.66, 0.91, 0.73),    # 苦難名稱和效果
+    'gift_reward_btns': (0.66, 0.76, 0.97, 0.85),   # 「拒绝饰品」「选择 0/2」
     'node_enter': (0.80, 0.69, 0.97, 0.82),        # 點節點後右下的「进入」
     'event_skip': (0.80, 0.84, 0.97, 0.95),        # 事件畫面右下「SKIP」
     'event_options_title': (0.52, 0.13, 0.70, 0.23),   # 「选项」
@@ -214,6 +222,16 @@ KEYWORD_MATCH_THRESHOLD = 0.85
 GIFT_LIT_VALUE = 40                # 所持饰品亮起 (可強化 / 可當材料) 的平均亮度
 
 
+# 戰鬥後的獎勵
+REWARD_CARD_Y = 0.42               # 獎勵卡片圖示的高度 (點這裡選)
+REWARD_CARD_CONFIRM = (0.64, 0.735)
+GIFT_REWARD_X = (0.19, 0.395, 0.602, 0.808)   # 選饰品獎勵：4 張卡的中心 x
+GIFT_REWARD_CLICK_Y = 0.45
+GIFT_REWARD_SELECT = (0.888, 0.804)
+GIFT_REWARD_TIER = (-0.03, 0.28, 0.005, 0.335)      # 等級 (相對卡片中心 x 的 x0, y0, x1, y1)
+GIFT_REWARD_KEYWORD = (0.005, 0.335, 0.047, 0.395)  # 關鍵詞圖示
+
+
 # OCR 關鍵字：英文版和 LLC 簡中漢化都列上去 (繁體會被自動轉成簡體)
 TEXT = {
     'luxcavation': ['Luxcavation', '采光'],
@@ -255,6 +273,8 @@ TEXT = {
     'enter': ['Enter', '进入'],
     'pack_replace': ['替换', 'replace'],
     'shop_title': ['商店', 'Shop'],
+    'reward_card_title': ['遭遇战奖励', '奖励卡'],
+    'gift_reward_marker': ['追加的苦难', '苦难'],
     'leave': ['离开', 'Leave'],
     'buy': ['购买', 'Purchase', 'Buy'],
     'enhance_title': ['强化E', '强化'],

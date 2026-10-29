@@ -409,6 +409,9 @@ def find_train(frame: np.ndarray, area=MAP_AREA) -> tuple[int, int] | None:
     region = np.zeros_like(mask)
     region[top:bottom, left:right] = mask[top:bottom, left:right]
     region = cv2.morphologyEx(region, cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8))
+    # 紅色主題的卡包，路線也是紅的：用開運算把細線去掉，只留火車身體
+    k = max(3, int(height * 0.006)) | 1
+    region = cv2.morphologyEx(region, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k)))
     count, _, stats, centroids = cv2.connectedComponentsWithStats(region)
     if count <= 1:
         return None
@@ -430,19 +433,14 @@ def yellow_mask(image: np.ndarray) -> np.ndarray:
     return ((r > 170) & (g > 120) & (b < 90) & (r - b > 110)).astype(np.uint8)
 
 
-def gift_tier(frame: np.ndarray, center, half: float = GIFT_HALF) -> int | None:
-    """數饰品左上角黃色的羅馬數字：直的細條 = I，比較寬的 = V。讀不到回傳 None。"""
-    height = frame.shape[0]
-    s = half * height
-    cx, cy = center
-    x0, x1 = int(cx - 0.85 * s), int(cx - 0.2 * s)
-    y0, y1 = int(cy - 0.85 * s), int(cy - 0.15 * s)
-    mask = yellow_mask(frame[max(0, y0):y1, max(0, x0):x1])
+def count_tier_bars(region: np.ndarray, min_height: float) -> int | None:
+    """數一塊區域裡黃色的羅馬數字：直的細條 = I，比較寬的 = V。min_height 是像素。"""
+    mask = yellow_mask(region)
     count, _, stats, _ = cv2.connectedComponentsWithStats(mask)
     ones = fives = 0
     for i in range(1, count):
         w, h = stats[i, cv2.CC_STAT_WIDTH], stats[i, cv2.CC_STAT_HEIGHT]
-        if h < 0.18 * s:
+        if h < min_height:
             continue                    # 外框的斜紋很短
         if w * 1.8 <= h:
             ones += 1
@@ -453,18 +451,44 @@ def gift_tier(frame: np.ndarray, center, half: float = GIFT_HALF) -> int | None:
     return ones if 1 <= ones <= 3 else None
 
 
+def gift_tier(frame: np.ndarray, center, half: float = GIFT_HALF) -> int | None:
+    """饰品圖示左上角的等級。讀不到回傳 None。"""
+    height = frame.shape[0]
+    s = half * height
+    cx, cy = center
+    x0, x1 = int(cx - 0.85 * s), int(cx - 0.2 * s)
+    y0, y1 = int(cy - 0.85 * s), int(cy - 0.15 * s)
+    return count_tier_bars(frame[max(0, y0):y1, max(0, x0):x1], 0.18 * s)
+
+
+def tier_in_roi(frame: np.ndarray, roi) -> int | None:
+    """相對座標區域裡的等級 (選饰品獎勵卡片上方那種)。"""
+    return count_tier_bars(crop_rel(frame, roi), 0.012 * frame.shape[0])
+
+
 def gift_keyword(frame: np.ndarray, center, templates: dict, half: float = GIFT_HALF):
-    """饰品右下角的關鍵詞小圖示，跟 kw_*.png 比對 (彩色，多種大小)。回傳 (名稱, 分數)。"""
+    """饰品右下角的關鍵詞小圖示，跟 kw_*.png 比對。回傳 (名稱, 分數)。"""
     height = frame.shape[0]
     s = half * height
     cx, cy = center
     region = frame[int(cy + 0.25 * s):int(cy + 1.05 * s), int(cx + 0.25 * s):int(cx + 1.05 * s), :3]
+    return match_keyword(region, templates, [s * r for r in (0.3, 0.35, 0.4, 0.46)])
+
+
+def keyword_in_roi(frame: np.ndarray, roi, templates: dict):
+    """相對座標區域裡的關鍵詞圖示 (大小約畫面高度的 2~3.5%)。"""
+    height = frame.shape[0]
+    return match_keyword(crop_rel(frame, roi)[:, :, :3], templates,
+                         [height * r for r in (0.018, 0.022, 0.027, 0.032)])
+
+
+def match_keyword(region: np.ndarray, templates: dict, sizes):
     best, best_score = None, -1.0
     if region.size == 0:
         return best, best_score
     for name, tpl in templates.items():
-        for ratio in (0.3, 0.35, 0.4, 0.46):
-            size = max(8, min(int(s * ratio), region.shape[0] - 1, region.shape[1] - 1))
+        for size in sizes:
+            size = max(8, min(int(size), region.shape[0] - 1, region.shape[1] - 1))
             small = cv2.resize(tpl[:, :, :3], (size, size), interpolation=cv2.INTER_AREA)
             # 只比對圖示本身 (亮的部分)，背景不同不影響
             mask = (small.max(axis=2) > 90).astype(np.uint8)
@@ -474,3 +498,110 @@ def gift_keyword(frame: np.ndarray, center, templates: dict, half: float = GIFT_
             if score > best_score:
                 best, best_score = name, score
     return best, best_score
+
+
+TRAIN_NODE_OFFSET = (0.58, 0.86)   # 火車圖 (map_train.png) 裡，所在節點中心的位置 (寬、高的比例)
+
+
+def find_train_node(frame: np.ndarray, template_rgba: np.ndarray, area=MAP_AREA, min_score: float = 0.75):
+    """用火車模板 (透明背景，只比對火車本身) 找目前位置，回傳所在節點的中心 (像素)。
+
+    背景是藍色或紅色主題都不影響。找不到回傳 None。
+    """
+    tpl = scale_template(template_rgba, frame.shape[0])
+    if tpl.shape[2] < 4:
+        return None
+    color, alpha = tpl[:, :, :3], tpl[:, :, 3]
+    mask = cv2.merge([(alpha > 127).astype(np.uint8)] * 3)
+    height, width = frame.shape[:2]
+    left, top, right, bottom = rel_to_px(area, width, height)
+    region = frame[top:bottom, left:right, :3]
+    th, tw = color.shape[:2]
+    if region.shape[0] < th or region.shape[1] < tw:
+        return None
+    response = cv2.matchTemplate(region, color, cv2.TM_SQDIFF_NORMED, mask=mask)
+    response = np.nan_to_num(response, nan=2.0, posinf=2.0)
+    value, _, (x, y), _ = cv2.minMaxLoc(response)
+    if 1.0 - value < min_score:
+        return None
+    return (left + x + int(tw * TRAIN_NODE_OFFSET[0]), top + y + int(th * TRAIN_NODE_OFFSET[1]))
+
+
+# 地圖縮到最小時，節點排成格子：欄距 (畫面寬度比例)、列距 (畫面高度比例)、節點外框高度
+MAP_DX, MAP_DY, MAP_NODE = 0.0995, 0.148, 0.059
+
+
+def _value(frame):
+    return cv2.cvtColor(frame[:, :, :3], cv2.COLOR_BGR2HSV)[:, :, 2]
+
+
+def route_lit(frame: np.ndarray, a, b, min_value: int = 150) -> bool:
+    """a → b 這條路能不能走：可以走的路中間有亮的箭頭 (»)，不管主題是藍色還是紅色。"""
+    height = frame.shape[0]
+    mx, my = (a[0] + b[0]) // 2, (a[1] + b[1]) // 2
+    r = int(0.02 * height)
+    region = _value(frame[max(0, my - r):my + r, max(0, mx - r):mx + r])
+    return region.size > 0 and float(np.percentile(region, 95)) > min_value
+
+
+def line_strength(frame: np.ndarray, a, b) -> tuple[float, float]:
+    """a、b 兩個節點之間有沒有連線：線上比兩側亮多少 (中位數, 亮的比例)。"""
+    height, width = frame.shape[:2]
+    v = _value(frame).astype(np.int16)
+    (ax, ay), (bx, by) = a, b
+    dx, dy = bx - ax, by - ay
+    length = float(np.hypot(dx, dy)) or 1.0
+    nx, ny = -dy / length, dx / length
+    off = 0.012 * height
+    diffs = []
+    for t in np.linspace(0.3, 0.7, 25):
+        x, y = ax + dx * t, ay + dy * t
+        pts = [(int(y + ny * o), int(x + nx * o)) for o in (-2, -1, 0, 1, 2)]
+        pts += [(int(y + ny * off), int(x + nx * off)), (int(y - ny * off), int(x - nx * off))]
+        if any(not (0 <= py < height and 0 <= px < width) for py, px in pts):
+            continue
+        on = max(v[py, px] for py, px in pts[:5])
+        side = (v[pts[5]] + v[pts[6]]) / 2
+        diffs.append(on - side)
+    if not diffs:
+        return 0.0, 0.0
+    return float(np.median(diffs)), float(np.mean(np.array(diffs) > 12))
+
+
+def map_grid_node(frame: np.ndarray, origin, col: int, row: int) -> MapNode:
+    height, width = frame.shape[:2]
+    return MapNode(int(origin[0] + col * MAP_DX * width), int(origin[1] + row * MAP_DY * height),
+                   int(MAP_NODE * height))
+
+
+def in_map(frame: np.ndarray, node: MapNode, area=MAP_AREA) -> bool:
+    height, width = frame.shape[:2]
+    return (area[0] * width < node.x < area[2] * width
+            and area[1] * height + node.size / 2 < node.y < area[3] * height - node.size / 2)
+
+
+def read_map_graph(frame: np.ndarray, train, templates: dict, threshold: float = 0.6, max_rows: int = 3):
+    """從目前位置 (火車所在節點) 看下一欄能走哪些節點，以及每個節點再下一欄連到哪些節點。
+
+    回傳 [(節點, 類型或 None, 分數, [(下下個節點, 類型或 None)])]，由上到下。
+    """
+    result = []
+    for row in range(-max_rows, max_rows + 1):
+        node = map_grid_node(frame, train, 1, row)
+        if not in_map(frame, node) or not route_lit(frame, train, (node.x, node.y)):
+            continue
+        kind, score = classify_node(node_icon(frame, node), templates) if templates else (None, 0.0)
+        follows = []
+        for step in range(-2, 3):
+            nxt = map_grid_node(frame, train, 2, row + step)
+            if not in_map(frame, nxt):
+                continue
+            median, ratio = line_strength(frame, (node.x, node.y), (nxt.x, nxt.y))
+            if median < 8 or ratio < 0.4:
+                continue
+            k2, s2 = classify_node(node_icon(frame, nxt), templates) if templates else (None, 0.0)
+            if s2 < threshold and (median < 20 or ratio < 0.8):
+                continue        # 線很淡又認不出節點：多半是背景花紋
+            follows.append((nxt, k2 if s2 >= threshold else None))
+        result.append((node, kind if score >= threshold else None, score, follows))
+    return result
