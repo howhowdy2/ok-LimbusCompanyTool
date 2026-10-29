@@ -160,12 +160,15 @@ def parse_fraction(text: str) -> tuple[int, int] | None:
 
 
 def parse_daily_bonus(text: str, total: int = 3) -> tuple[int, int] | None:
-    """「每日加成 0/3」：斜線字體很花，常被讀成 '03'，這種情況也接受。"""
+    """「每日加成 0/3」：斜線字體很花，常被讀成 '03'、'0月3'、'073'，這些也接受。
+
+    規則：第一個數字是已用次數 (0~total)，最後一個數字要是 total。
+    """
     found = parse_fraction(text)
     if found and found[1] == total and 0 <= found[0] <= total:
         return found
     digits = re.sub(r'\D', '', text or '')
-    if len(digits) == 2 and digits[1] == str(total) and int(digits[0]) <= total:
+    if len(digits) >= 2 and digits[-1] == str(total) and int(digits[0]) <= total:
         return int(digits[0]), total
     return None
 

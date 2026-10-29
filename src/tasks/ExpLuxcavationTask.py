@@ -9,6 +9,7 @@ from src.tasks.LimbusBaseTask import LimbusBaseTask, TaskFailed
 MODE_SKIP = '跳過戰鬥'
 MODE_BATTLE = '進入戰鬥'
 STAGE_OPTIONS = ['最右邊 (最高關)', '中間', '最左邊']
+LEVEL_OPTIONS = ['最下面 (等級最高)', '中間', '最上面']
 MAX_REPEAT = 10  # 遊戲「连续进行」上限
 # 彈窗裡出現這些字就停：代表可能要花狂氣或購買東西
 DANGER_TEXT = ['Lunacy', '狂气', '购买', 'Purchase', '不足']
@@ -200,6 +201,31 @@ class LuxcavationTask(LimbusBaseTask):
             self.screenshot('fail_set_repeat')
             raise TaskFailed(f'连续进行想設 {runs} 次，畫面上是 {current}')
 
+    # ---------- 选择关卡 (纺锤本會跳出來) ----------
+
+    def level_popup_open(self):
+        return bool(self.ocr_roi('level_title', TEXT['level_title']))
+
+    def choose_level(self, skip: bool):
+        """「选择关卡」視窗：依設定點某一列右邊的「跳过战斗」或「进入」。
+
+        列表由上到下等級越來越高，預設點最下面 (等級最高) 那一列。
+        """
+        key = 'lux_skip' if skip else 'lux_enter'
+        rows = sorted(self.ocr_roi('level_actions', TEXT[key]), key=lambda b: b.y)
+        if not rows:
+            self.screenshot('fail_choose_level')
+            raise TaskFailed('「选择关卡」視窗裡找不到按鈕')
+        choice = self.config.get('Level', LEVEL_OPTIONS[0])
+        if choice == LEVEL_OPTIONS[2]:
+            row = rows[0]
+        elif choice == LEVEL_OPTIONS[1]:
+            row = rows[len(rows) // 2]
+        else:
+            row = rows[-1]
+        self.info_set('关卡', f'第 {rows.index(row) + 1} 列 (共 {len(rows)} 列)')
+        self.click_box(row, after_sleep=1.5)
+
     # ---------- 跳過戰鬥 ----------
 
     def skip_battle(self, button):
@@ -208,6 +234,9 @@ class LuxcavationTask(LimbusBaseTask):
         clicked_any = False
         while time.time() - start < 30:
             self.next_frame()
+            if self.level_popup_open():
+                self.choose_level(skip=True)
+                continue
             result = self.handle_result_screen()
             if result:
                 clicked_any = True
@@ -227,8 +256,9 @@ class LuxcavationTask(LimbusBaseTask):
                 self.click_box(cont, after_sleep=1.5)
                 clicked_any = True
                 continue
-            # 沒有彈窗、又回到關卡列表 = 結束
-            if (clicked_any or time.time() - start > 5) and self.on_stage_list():
+            # 按過結算/確認、而且回到關卡列表 = 結束
+            # (只看關卡列表不夠：選關視窗後面那些沒開放的卡片也讀得到「进入」)
+            if clicked_any and self.on_stage_list():
                 return
             self.sleep(1)
         self.screenshot('fail_skip_battle')
@@ -244,7 +274,11 @@ class LuxcavationTask(LimbusBaseTask):
     def enter_and_fight(self, button):
         self.click_box(button, after_sleep=2)
         try:
-            self.wait_for(self.on_team_screen, time_out=10, what='編隊畫面')
+            self.wait_for(lambda: self.on_team_screen() or self.level_popup_open(),
+                          time_out=10, what='編隊畫面')
+            if self.level_popup_open():
+                self.choose_level(skip=False)
+                self.wait_for(self.on_team_screen, time_out=10, what='編隊畫面')
         except TaskFailed:
             raise TaskFailed('點了「进入」卻沒進編隊畫面，可能是模組不足或跳出了提示視窗')
         start_button = self.ocr_roi('to_battle', TEXT['to_battle'])

@@ -1,6 +1,8 @@
+import cv2
+
 from src.lc import vision
-from src.lc.layout import TEXT
-from src.tasks.ExpLuxcavationTask import LuxcavationTask
+from src.lc.layout import ROI, TEXT
+from src.tasks.ExpLuxcavationTask import LEVEL_OPTIONS, LuxcavationTask
 
 
 class ThreadLuxcavationTask(LuxcavationTask):
@@ -12,23 +14,40 @@ class ThreadLuxcavationTask(LuxcavationTask):
     TAB_TEXT = TEXT['lux_thread_tab']
     TITLE = '纺锤本'
     DEFAULT_RUNS = 3
+    SKIP_COST = 12   # 「选择关卡」上每一列「跳过战斗 -12」
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.name = '打纺锤本'
         self.description = '跳過戰鬥打采光「纺锤」，預設 3 次 (每日加成)'
-        self.default_config.update({'Only Daily Bonus': True})
+        self.default_config.update({'Only Daily Bonus': True, 'Level': LEVEL_OPTIONS[0]})
+        self.config_type.update({'Level': {'type': 'drop_down', 'options': LEVEL_OPTIONS}})
         self.config_description.update({
+            'Level': '點下去後「选择关卡」視窗要選哪一列 (越下面等級越高)',
             'Runs': '要打幾次，1~10。每日加成一天 3 次',
             'Only Daily Bonus': '只打還剩下的每日加成次數 (例如今天已打 1 次，就只打 2 次)',
         })
 
     def read_daily_bonus(self):
-        """讀「每日加成 0/3」，回傳 (已用, 上限)。"""
+        """讀「每日加成 0/3」，回傳 (已用, 上限)。
+
+        斜線那幾個字很花，OCR 常讀錯：先讀整塊，讀不到再把數字部分加框、放大重讀幾次。
+        """
         text = ''.join(b.name for b in self.ocr_roi('lux_bonus'))
         if not vision.keywords_regex(TEXT['daily_bonus']).search(text):
-            return None
-        return vision.parse_daily_bonus(text)
+            return None  # 不在纺锤分頁
+        found = vision.parse_daily_bonus(text)
+        if found:
+            return found
+        crop = vision.crop_rel(self.frame, ROI['lux_bonus_num'])
+        for scale in (1, 3, 2):
+            image = cv2.resize(crop, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+            image = cv2.copyMakeBorder(image, 20, 20, 20, 20, cv2.BORDER_REPLICATE)
+            boxes = self.ocr(frame=image, threshold=0.3)
+            found = vision.parse_daily_bonus(''.join(b.name for b in boxes))
+            if found:
+                return found
+        return None
 
     def planned_runs(self, runs: int) -> int:
         bonus = self.read_daily_bonus()

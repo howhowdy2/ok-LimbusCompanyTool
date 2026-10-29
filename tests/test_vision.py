@@ -98,6 +98,9 @@ class ParseNumberTest(unittest.TestCase):
     def test_daily_bonus(self):
         self.assertEqual((0, 3), vision.parse_daily_bonus('每日加成0/3'))
         self.assertEqual((2, 3), vision.parse_daily_bonus('每日加成23'))  # 斜線沒讀到
+        self.assertEqual((0, 3), vision.parse_daily_bonus('0月3'))
+        self.assertEqual((0, 3), vision.parse_daily_bonus('073'))
+        self.assertIsNone(vision.parse_daily_bonus('0/'))
         self.assertIsNone(vision.parse_daily_bonus('每日加成0月'))
         self.assertIsNone(vision.parse_daily_bonus('每日加成'))
 
