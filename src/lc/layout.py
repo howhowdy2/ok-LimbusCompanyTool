@@ -111,6 +111,11 @@ ROI = {
     # 事件的判定
     'judge_title': (0.64, 0.41, 0.87, 0.48),       # 「选择一位罪人来进行判定:」
     'judge_levels': (0.03, 0.84, 0.69, 0.877),     # 罪人頭上的「极高 / 高 / 普通 / 低 / 极低」
+    'gift_tag_row': (0.05, 0.19, 0.95, 0.25),      # 每張饰品卡右上的「获得E.G.O饰品」標籤
+    'parallel_title': (0.30, 0.22, 0.70, 0.55),    # 第 5 層打完的「平行叠加模式」
+    'finish_title': (0.07, 0.12, 0.31, 0.23),      # 「探索完成」
+    'finish_claim': (0.80, 0.78, 0.97, 0.88),      # 「领取奖励」
+    'weekly_bonus': (0.30, 0.42, 0.70, 0.54),      # 「要消耗"每周加成"以领取额外奖励吗?」
     'node_enter': (0.80, 0.69, 0.97, 0.82),        # 點節點後右下的「进入」
     'event_skip': (0.80, 0.84, 0.97, 0.95),        # 事件畫面右下「SKIP」
     'event_options_title': (0.52, 0.13, 0.70, 0.23),   # 「选项」
@@ -232,9 +237,13 @@ REWARD_CARD_Y = 0.42               # 獎勵卡片圖示的高度 (點這裡選)
 REWARD_CARD_CONFIRM = (0.64, 0.735)
 GIFT_REWARD_X = (0.19, 0.395, 0.602, 0.808)   # 選饰品獎勵：4 張卡的中心 x
 GIFT_REWARD_CLICK_Y = 0.45
+GIFT_TAG_TO_CENTER = -0.048        # 「获得E.G.O饰品」標籤中心 → 卡片中心 x
+PARALLEL_CANCEL = (0.42, 0.655)
+FINISH_CLAIM_BTN = (0.8975, 0.831)
+WEEKLY_CONFIRM, WEEKLY_CANCEL = (0.61, 0.685), (0.415, 0.685)
 GIFT_REWARD_SELECT = (0.888, 0.804)
-GIFT_REWARD_TIER = (-0.03, 0.28, 0.005, 0.335)      # 等級 (相對卡片中心 x 的 x0, y0, x1, y1)
-GIFT_REWARD_KEYWORD = (0.005, 0.335, 0.047, 0.395)  # 關鍵詞圖示
+GIFT_REWARD_TIER = (-0.035, 0.27, 0.012, 0.34)       # 等級 (相對卡片中心 x 的 x0, y0, x1, y1)
+GIFT_REWARD_KEYWORD = (0.005, 0.33, 0.055, 0.405)  # 關鍵詞圖示
 
 
 # OCR 關鍵字：英文版和 LLC 簡中漢化都列上去 (繁體會被自動轉成簡體)
@@ -278,6 +287,11 @@ TEXT = {
     'enter': ['Enter', '进入'],
     'pack_replace': ['替换', '将被', 'replace'],   # 字太長時「替 / 换」會被拆成兩行
     'shop_title': ['商店', 'Shop'],
+    'parallel': ['平行叠加', 'Parallel'],
+    'finish': ['探索完成', 'Exploration Complete'],
+    'claim_reward': ['领取奖励', 'Claim'],
+    'weekly_bonus': ['每周加成', 'Weekly'],
+    'cancel': ['取消', 'Cancel'],
     'judge_title': ['进行判定', '选择一位罪人'],
     'judge_go': ['进行判定', '判定', '继续', 'Continue'],
     'reward_card_title': ['遭遇战奖励', '选择遭遇战'],

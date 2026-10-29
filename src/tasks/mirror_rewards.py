@@ -1,7 +1,7 @@
 """戰鬥後的獎勵：遭遇戰獎勵卡、選 E.G.O 饰品 (附帶苦難)。給 MirrorDungeonTask 繼承用。"""
 
 from src.lc import rewards, vision
-from src.lc.layout import (GIFT_KEYWORDS, GIFT_REWARD_CLICK_Y, KEYWORD_TEMPLATES, GIFT_REWARD_KEYWORD, GIFT_REWARD_SELECT,
+from src.lc.layout import (GIFT_KEYWORDS, GIFT_REWARD_CLICK_Y, GIFT_TAG_TO_CENTER, KEYWORD_TEMPLATES, GIFT_REWARD_KEYWORD, GIFT_REWARD_SELECT,
                            GIFT_REWARD_TIER, GIFT_REWARD_X, KEYWORD_MATCH_THRESHOLD, REWARD_CARD_CONFIRM,
                            REWARD_CARD_Y, TEXT)
 
@@ -33,6 +33,9 @@ class MirrorRewardMixin:
             return True
         if self.ocr_roi('gift_reward_marker', TEXT['gift_reward_marker']):
             self.choose_gift_rewards()
+            return True
+        if self.ocr_roi('gift_reward_btns', TEXT['reject']):
+            self.choose_plain_gifts()
             return True
         return False
 
@@ -114,3 +117,51 @@ class MirrorRewardMixin:
         else:
             self.click_relative(*GIFT_REWARD_SELECT, after_sleep=2)
         self.info_incr('戰後饰品')
+
+    # ---------- 選饰品 (沒有苦難，特殊戰鬥後) ----------
+
+    def plain_gift_cards(self):
+        """用每張卡右上的「获得E.G.O饰品」標籤找卡片 (1~4 張、位置不固定)。"""
+        self.next_frame()
+        templates = self.keyword_templates()
+        cards = []
+        tags = sorted(self.ocr_roi('gift_tag_row', TEXT['gift_got']), key=lambda b: b.x)
+        for i, tag in enumerate(tags):
+            cx = (tag.x + tag.width / 2) / self.width + GIFT_TAG_TO_CENTER
+            tx0, ty0, tx1, ty1 = GIFT_REWARD_TIER
+            kx0, ky0, kx1, ky1 = GIFT_REWARD_KEYWORD
+            tier = vision.tier_in_roi(self.frame, (cx + tx0, ty0, cx + tx1, ty1))
+            kw, score = vision.keyword_in_roi(self.frame, (cx + kx0, ky0, cx + kx1, ky1), templates)
+            cards.append((cx, tier, kw if score >= KEYWORD_MATCH_THRESHOLD else None))
+        return cards
+
+    def plain_gift_screen(self):
+        return (self.ocr_roi('gift_reward_btns', TEXT['reject'])
+                and not self.ocr_roi('gift_reward_marker', TEXT['gift_reward_marker']))
+
+    def choose_plain_gifts(self):
+        """等級高的優先，同等級時看 Reward Keywords。只有一張卡時通常已經選好，先直接按「选择」。"""
+        self.sleep(1)
+        cards = self.plain_gift_cards()
+        keywords = list(self.config.get('Reward Keywords', []))
+        rank = {k: i for i, k in enumerate(keywords)}
+        cards.sort(key=lambda c: (-(c[1] or 0), rank.get(c[2], len(rank))))
+        n = self.picks_left('gift_reward_btns')
+        self.log_info('饰品獎勵：' + '、'.join(
+            f'{["?", "I", "II", "III", "IV", "V"][t or 0]}/{k or "?"}' for _, t, k in cards) + f'，選 {n} 個')
+        for attempt in range(3):
+            if attempt > 0 or len(cards) > 1:
+                for cx, _, _ in cards[:n]:
+                    self.click_relative(cx, GIFT_REWARD_CLICK_Y, after_sleep=0.8)
+            button = [b for b in self.ocr_roi('gift_reward_btns', TEXT['select'])
+                      if not vision.keywords_regex(TEXT['reject']).search(b.name)]
+            if button:
+                self.click_box(button[-1], after_sleep=2)
+            else:
+                self.click_relative(*GIFT_REWARD_SELECT, after_sleep=2)
+            self.next_frame()
+            if not self.plain_gift_screen():
+                self.info_incr('戰後饰品')
+                return
+        self.screenshot('fail_plain_gift')
+        self.log_warning('選了饰品還停在選擇畫面')

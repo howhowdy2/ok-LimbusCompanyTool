@@ -469,11 +469,15 @@ def count_tier_bars(region: np.ndarray, min_height: float) -> int | None:
     k = max(5, int(min_height * 0.6))
     mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, np.ones((k, 1), np.uint8))
     count, labels, stats, _ = cv2.connectedComponentsWithStats(mask)
+    heights = [stats[i, cv2.CC_STAT_HEIGHT] for i in range(1, count) if stats[i, cv2.CC_STAT_HEIGHT] >= min_height]
+    if not heights:
+        return None
+    tallest = max(heights)
     ones = slanted = 0
     for i in range(1, count):
         h = stats[i, cv2.CC_STAT_HEIGHT]
-        if h < min_height:
-            continue
+        if h < max(min_height, 0.75 * tallest):
+            continue                    # 羅馬數字每一筆一樣高；矮的是圖示 (例如黃色的雞腿)
         ys, xs = np.nonzero(labels == i)
         top, bottom = ys.min(), ys.max()
         band = max(2, h // 8)

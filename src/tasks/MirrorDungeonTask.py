@@ -14,6 +14,7 @@ from src.lc.layout import (PACK_DRAG_FROM_Y, PACK_DRAG_TO_Y, PACK_MODE_ARROW, PA
                            GRACE_COL_X, GRACE_NAMES, GRACE_PLUS_DX, GRACE_PLUS_Y,
                            GRACE_PLUSPLUS_DX, GRACE_ROW_Y, TEXT,
                            EVENT_OPTION_GAP, EVENT_SKIP_BTN, NODE_ENTER_BTN,
+                           FINISH_CLAIM_BTN, PARALLEL_CANCEL, WEEKLY_CANCEL, WEEKLY_CONFIRM,
                            JUDGE_SINNER_DX, JUDGE_SINNER_X0, JUDGE_SINNER_Y,
                            MAP_CENTER, MAP_ZOOM_SCROLLS, NODE_MATCH_THRESHOLD, NODE_TYPES, NODE_UNKNOWN)
 from src.tasks.LimbusBaseTask import TEMPLATE_DIR, LimbusBaseTask, TaskFailed
@@ -86,6 +87,7 @@ class MirrorDungeonTask(MirrorShopMixin, MirrorRewardMixin, LimbusBaseTask):
             'Map Lookahead': True,
             'Event Option Priority': list(EVENT_DEFAULT),
             'Battle Timeout (s)': 400,
+            'Use Weekly Bonus': True,
         })
         self.config_type['Pack Difficulty'] = {'type': 'drop_down',
                                                'options': [MODE_KEEP, MODE_HARD, MODE_NORMAL]}
@@ -113,6 +115,7 @@ class MirrorDungeonTask(MirrorShopMixin, MirrorRewardMixin, LimbusBaseTask):
                                      + '。同一級時選能拿到比較多饰品的 (50%概率算半件)。'
                                        '「其他」= 沒有小字或沒見過的非戰鬥選項 (會存到 screenshots/event_options)',
             'Battle Timeout (s)': '迷宮裡單場戰鬥最多等幾秒',
+            'Use Weekly Bonus': '打完迷宮領獎勵時，問「要消耗每周加成」就按确认 (關掉 = 取消)',
         })
         for slot in range(1, OBSERVE_SLOTS + 1):
             type_key, tier_key, index_key = observe_keys(slot)
@@ -148,7 +151,7 @@ class MirrorDungeonTask(MirrorShopMixin, MirrorRewardMixin, LimbusBaseTask):
         # 設定畫面照流程順序顯示：恩惠 → 饰品观测 → 卡包 (各層想要的 → 避開 → 刷新/觀測)
         pack_keys = (['Pack Difficulty'] + [pack_key(f) for f in pack_data.FLOORS]
                      + ['Pack Avoid', 'Pack Use Refresh', 'Pack Use Observe', 'Node Priority', 'Map Lookahead',
-                        'Event Option Priority', 'Battle Timeout (s)'])
+                        'Event Option Priority', 'Battle Timeout (s)', 'Use Weekly Bonus'])
         for key in pack_keys:
             self.default_config[key] = self.default_config.pop(key)
         # 戰後獎勵、商店設定放最後
@@ -215,6 +218,9 @@ class MirrorDungeonTask(MirrorShopMixin, MirrorRewardMixin, LimbusBaseTask):
             elif screen == 'map':
                 self.choose_node()
                 self.enter_node()
+            elif screen == 'done':
+                self.finish_dungeon()
+                return
             else:
                 self.screenshot('fail_unknown_screen')
                 raise TaskFailed('不知道現在是什麼畫面 (不是地圖、卡包、商店、事件或戰鬥)，請把截圖給我')
@@ -227,6 +233,11 @@ class MirrorDungeonTask(MirrorShopMixin, MirrorRewardMixin, LimbusBaseTask):
             self.next_frame()
             if self.handle_rewards() or self.handle_gift_popup():
                 continue
+            # 平行叠加模式的視窗蓋在地圖上，要比地圖先檢查
+            if self.handle_parallel():
+                continue
+            if self.on_finish_screen():
+                return 'done'
             if self.on_map_screen():
                 return 'map'
             if self.ocr_roi('pack_title', TEXT['pack_title']):
@@ -516,7 +527,8 @@ class MirrorDungeonTask(MirrorShopMixin, MirrorRewardMixin, LimbusBaseTask):
         # 只認畫面正中間的標題；戰後選饰品的每張卡上也有小小的「获得E.G.O饰品」標籤，不能當成彈窗
         titles = [b for b in self.ocr_roi('gift_got_title', TEXT['gift_got'])
                   if 0.45 < (b.x + b.width / 2) / self.width < 0.55]
-        if not titles or self.ocr_roi('gift_reward_marker', TEXT['gift_reward_marker']):
+        if (not titles or self.ocr_roi('gift_reward_marker', TEXT['gift_reward_marker'])
+                or self.ocr_roi('gift_reward_btns', TEXT['reject'])):
             return False
         name = ''.join(b.name for b in self.ocr_roi('gift_got_name')).strip() or '(讀不到名稱)'
         gifts = getattr(self, 'acquired_gifts', None)
@@ -1078,6 +1090,8 @@ class MirrorDungeonTask(MirrorShopMixin, MirrorRewardMixin, LimbusBaseTask):
         start, result = time.time(), None
         while time.time() - start < timeout:
             self.next_frame()
+            if self.handle_parallel():
+                continue
             if self.on_map_screen() or self.ocr_roi('pack_title', TEXT['pack_title']):
                 self.log_info(f'戰鬥結束 ({result or "?"})，用時 {int(time.time() - start)} 秒')
                 return result or 'victory'
@@ -1097,6 +1111,8 @@ class MirrorDungeonTask(MirrorShopMixin, MirrorRewardMixin, LimbusBaseTask):
             if self.on_battle_team_screen():   # 開戰沒反應，再按一次
                 self.click_pos('to_battle', after_sleep=3)
                 continue
+            if self.on_finish_screen():
+                return result or 'victory'
             confirm = self.ocr_roi('lower_half', TEXT['confirm'])
             if confirm:
                 self.click_box(confirm, after_sleep=2)
@@ -1104,3 +1120,51 @@ class MirrorDungeonTask(MirrorShopMixin, MirrorRewardMixin, LimbusBaseTask):
             self.sleep(1)
         self.screenshot('fail_md_battle')
         raise TaskFailed(f'戰鬥超過 {timeout} 秒沒回到地圖 (可能是戰後獎勵畫面還沒做)，請把截圖給我')
+
+    # ---------- 打完第 5 層 ----------
+
+    def handle_parallel(self) -> bool:
+        """「平行叠加模式当前可用。要应用平行叠加模式并进入下一层吗?」→ 取消。"""
+        if not self.ocr_roi('parallel_title', TEXT['parallel']):
+            return False
+        self.log_info('平行叠加模式：取消')
+        cancel = self.ocr_roi('center', TEXT['cancel'])
+        if cancel:
+            self.click_box(cancel[0], after_sleep=2)
+        else:
+            self.click_relative(*PARALLEL_CANCEL, after_sleep=2)
+        return True
+
+    def on_finish_screen(self):
+        return self.ocr_roi('finish_title', TEXT['finish'])
+
+    def finish_dungeon(self):
+        """探索完成 → 领取奖励 → (每周加成) 确认 → 通行证等级提升 确认 → 回到主畫面。"""
+        self.log_info('探索完成，領取獎勵', notify=True)
+        use_weekly = self.config.get('Use Weekly Bonus', True)
+        start = time.time()
+        while time.time() - start < 60:
+            self.next_frame()
+            if self.is_home():
+                self.log_info('已回到主畫面')
+                self.info_incr('完成迷宮')
+                return
+            if self.ocr_roi('weekly_bonus', TEXT['weekly_bonus']):
+                self.log_info('每周加成：' + ('使用' if use_weekly else '不使用'))
+                self.click_relative(*(WEEKLY_CONFIRM if use_weekly else WEEKLY_CANCEL), after_sleep=2.5)
+                continue
+            confirm = self.ocr_roi('center', TEXT['confirm'])
+            if confirm:
+                self.click_box(confirm[0], after_sleep=2.5)
+                continue
+            claim = self.ocr_roi('finish_claim', TEXT['claim_reward'])
+            if claim:
+                self.click_box(claim[0], after_sleep=2.5)
+                continue
+            if self.on_finish_screen():
+                self.click_relative(*FINISH_CLAIM_BTN, after_sleep=2.5)
+                continue
+            self.sleep(1)
+        self.log_warning('領完獎勵 60 秒還沒回到主畫面，改用回主畫面')
+        self.info_incr('完成迷宮')
+        self.go_home()
