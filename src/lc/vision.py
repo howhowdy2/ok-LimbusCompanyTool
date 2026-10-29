@@ -188,6 +188,14 @@ def parse_int(text: str) -> int | None:
     return int(digits) if digits else None
 
 
+_DIGIT_LOOKALIKE = str.maketrans({'O': '0', 'o': '0', 'G': '6', 'B': '8', 'S': '5', 'l': '1', 'I': '1'})
+
+
+def parse_stylized_int(text: str) -> int | None:
+    """遊戲的花體數字常被讀成字母：'本9G' -> 96 (G 當 6、O 當 0 …)。"""
+    return parse_int((text or '').translate(_DIGIT_LOOKALIKE))
+
+
 def keywords_regex(keywords) -> re.Pattern:
     """關鍵字清單 -> 不分大小寫、包含即可的 regex，給 ok-script 的 ocr(match=...) 用。"""
     if isinstance(keywords, str):

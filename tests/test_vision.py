@@ -109,6 +109,11 @@ class ParseNumberTest(unittest.TestCase):
         self.assertEqual(60, vision.parse_int('6O'))
         self.assertIsNone(vision.parse_int('LUNACY'))
 
+    def test_stylized_int(self):
+        self.assertEqual(96, vision.parse_stylized_int('本96'))
+        self.assertEqual(96, vision.parse_stylized_int('本9G'))
+        self.assertIsNone(vision.parse_stylized_int('本'))
+
 
 class KeywordsRegexTest(unittest.TestCase):
     def test_contains_and_ignores_case(self):
