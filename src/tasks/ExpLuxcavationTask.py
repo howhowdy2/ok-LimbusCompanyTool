@@ -1,7 +1,7 @@
 import time
 
 from src.lc import vision
-from src.lc.layout import REPEAT_UP_OFFSET_X, REPEAT_UP_Y, TEXT
+from src.lc.layout import REPEAT, TEXT
 from src.tasks.LimbusBaseTask import LimbusBaseTask, TaskFailed
 
 MODE_SKIP = '跳過戰鬥'
@@ -10,6 +10,7 @@ STAGE_OPTIONS = ['最右邊 (最高關)', '中間', '最左邊']
 # 每次消耗的腦啡肽模組 (畫面上「进入 3」「跳过战斗 6」)
 ENTER_COST = 3
 SKIP_COST = 6
+MAX_REPEAT = 10  # 遊戲「连续进行」上限
 # 彈窗裡出現這些字就停：代表可能要花狂氣或購買東西
 DANGER_TEXT = ['Lunacy', '狂气', '购买', 'Purchase', '不足']
 
@@ -40,7 +41,7 @@ class ExpLuxcavationTask(LimbusBaseTask):
         })
         self.config_description.update({
             'Mode': '跳過戰鬥：花較多模組直接拿獎勵，最穩定\n進入戰鬥：用上次的編隊自動打',
-            'Runs': '要打幾次 (用遊戲的「连续进行」一次設定好)',
+            'Runs': '要打幾次，1~10 (用遊戲的「连续进行」一次設定好)',
             'Stage': '打畫面上哪一張關卡卡片',
             'Battle Timeout (s)': '進入戰鬥模式下，一場最多等幾秒 (连续进行 N 次就等 N 倍)',
         })
@@ -48,6 +49,9 @@ class ExpLuxcavationTask(LimbusBaseTask):
     def run(self):
         self.open_luxcavation()
         runs = max(1, self.config.get('Runs', 1))
+        if runs > MAX_REPEAT:
+            self.log_warning(f'连续进行最多 {MAX_REPEAT} 次，改成 {MAX_REPEAT}')
+            runs = MAX_REPEAT
         skip = self.config.get('Mode') == MODE_SKIP
         before = self.read_modules()
         self.info_set('模組 (開始)', before)
@@ -104,29 +108,47 @@ class ExpLuxcavationTask(LimbusBaseTask):
             return buttons[len(buttons) // 2]
         return buttons[-1]
 
-    def repeat_count_near(self, button):
-        """讀出和 button 同一張卡片上的「连续进行×N」。"""
+    def repeat_header(self, button):
+        """找和 button 同一張卡片上的「连续进行×N」文字框。"""
         cx = button.x + button.width / 2
         for box in self.ocr_roi('lux_repeat', TEXT['lux_repeat']):
             if abs(box.x + box.width / 2 - cx) < self.width * 0.13:
-                return vision.parse_repeat(box.name)
+                return box
         return None
 
+    def repeat_count_near(self, button):
+        header = self.repeat_header(button)
+        return vision.parse_repeat(header.name) if header else None
+
     def set_repeat(self, button, runs: int):
-        """按 ▲ 直到「连续进行」等於 runs (到上限就停)。"""
-        cx = (button.x + button.width / 2) / self.width
+        """設定「连续进行」次數：點 ▲ 展開 → 按「1«」歸 1 → 按綠色 + (runs-1) 次 → 點 ▼ 收起。"""
+        header = self.repeat_header(button)
+        if header is None:
+            self.log_warning('找不到「连续进行」，只打 1 次')
+            return
+        current = vision.parse_repeat(header.name)
+        if current == runs:
+            self.info_set('连续进行', current)
+            return
+
+        w, h = self.width, self.height
+        hx = (header.x + header.width / 2) / w
+        hy = (header.y + header.height / 2) / h
+        toggle = ((header.x + header.width) / w + REPEAT.toggle_dx, hy)
+        row_y = hy + REPEAT.row_dy
+
+        self.click_relative(*toggle, after_sleep=0.8)            # ▲ 展開
+        self.click_relative(hx + REPEAT.min_dx, row_y, after_sleep=0.4)   # 1« 歸 1
+        for _ in range(runs - 1):
+            self.click_relative(hx + REPEAT.plus_dx, row_y, after_sleep=0.3)  # 綠色 +
+        self.click_relative(*toggle, after_sleep=0.6)            # ▼ 收起
+        self.next_frame()
         current = self.repeat_count_near(button)
-        for _ in range(20):
-            if current is None or current >= runs:
-                break
-            self.click_relative(cx + REPEAT_UP_OFFSET_X, REPEAT_UP_Y, after_sleep=0.4)
-            self.next_frame()
-            new = self.repeat_count_near(button)
-            if new == current:  # 已經到上限
-                self.log_warning(f'连续进行最多只能設到 {current}')
-                break
-            current = new
+
         self.info_set('连续进行', current)
+        if current != runs:
+            self.screenshot('fail_set_repeat')
+            raise TaskFailed(f'连续进行想設 {runs} 次，畫面上是 {current}')
 
     # ---------- 跳過戰鬥 ----------
 

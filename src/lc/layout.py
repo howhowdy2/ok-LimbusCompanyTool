@@ -44,9 +44,15 @@ ROI = {
     'result_confirm': (0.80, 0.72, 0.97, 0.86),
 }
 
-# 「连续进行」的 ▲ 按鈕，相對於同一張卡片「进入」按鈕中心的位置
-REPEAT_UP_OFFSET_X = 0.100
-REPEAT_UP_Y = 0.353
+# 「连续进行」下拉面板，位置都相對於 OCR 找到的「连续进行×N」文字框
+#   ▲/▼ 開關：文字框右邊再往右 toggle_dx
+#   展開後那一列 (1« − [數字] + »10)：在文字框中心下方 row_dy
+#   1«：中心往左 min_dx；綠色 +：中心往右 plus_dx
+class REPEAT:
+    toggle_dx = 0.051
+    row_dy = 0.044
+    min_dx = -0.072
+    plus_dx = 0.063
 
 # OCR 關鍵字：英文版和 LLC 簡中漢化都列上去 (繁體會被自動轉成簡體)
 TEXT = {
