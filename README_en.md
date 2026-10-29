@@ -1,66 +1,34 @@
-# ok-script-app
+# ok-LimbusCompanyTool
 
 English | [中文](README.md)
 
-ok-script-app is a Python automation project template built on [ok-script](https://github.com/ok-oldking/ok-script). It supports GUI automation apps for native Windows games, Android emulators, and browser games.
+A screen-recognition tool that automates **Limbus Company** dailies, built on [ok-script](https://github.com/ok-oldking/ok-script).
+It only reads the screen and simulates mouse/keyboard input; it never reads or modifies game memory or files.
 
-The template includes task examples, OCR, template matching, configuration widgets, tests, i18n, EXE packaging, and update/release configuration. It is a starter project and feature demo, not a finished automation tool for a specific game.
+> Personal learning project. Automation tools may violate the game's terms of service. Use at your own risk.
 
-## Documentation
+## Tasks
 
-The complete documentation is organized as an MkDocs site:
+| Task | What it does |
+|---|---|
+| Daily (一鍵日常) | EXP Luxcavation, then convert the remaining Enkephalin to modules |
+| Enkephalin (換體力) | Convert all Enkephalin into Enkephalin Modules (never spends Lunacy) |
+| EXP Luxcavation (打經驗本) | Run EXP Luxcavation with the last-used team; runs and stage are configurable |
+| Capture Template (擷取模板) | Save the reference images used for recognition from the current game screen |
 
-- [Documentation home](docs/en/index.md)
-- [Quick start](docs/en/getting-started.md)
-- [App and runtime target configuration](docs/en/configuration.md)
-- [Task development](docs/en/tasks.md)
-- [Packaging and release](docs/en/release.md)
-- [Build the documentation site](docs/en/documentation.md)
-- [中文文档](docs/index.md)
+## Requirements
 
-## Quick Preview
+- PC (Steam) version, **16:9**, 1920×1080 or 2560×1440 recommended
+- Game language: English, or the LLC Simplified Chinese patch
+- The game must stay in the foreground while tasks run
+- Windows and Python 3.12 for development (see the Chinese README for setup commands)
 
-```powershell
-py -3.12 -m venv .venv
-.\.venv\Scripts\Activate.ps1
-$PypiIndex = "https://pypi.org/simple/"
-python -m pip install --index-url $PypiIndex --upgrade pip
-python -m pip install --index-url $PypiIndex --no-deps --upgrade -r requirements.txt
-python main_debug.py
-```
+## First run: create templates
 
-Direct dependencies are managed in `pyproject.toml`. `requirements.txt` is the
-compiled Qt profile and `requirements-web.txt` is the compiled web profile; do
-not edit these generated lock files directly. For the web profile, replace the
-dependency and launch commands above with `requirements-web.txt` and
-`python web_main_debug.py`, respectively. The official PyPI index URL for pip
-must include `/simple/`; `https://pypi.org/` is not a valid package index URL.
+Use the Capture Template task on: the home screen (`home_window`), the Enkephalin panel (`enk_max`),
+a team formation screen (`team_screen`), and the Luxcavation EXP list (full screenshot, then crop the door icon
+to `assets/lc/exp_enter.png`). Commit `assets/lc/*.png` afterwards.
 
-See the [Quick start](docs/en/getting-started.md) for repository initialization, runtime target configuration, the first task, and tag-based packaging.
+## Release
 
-## Build the Documentation Site
-
-```powershell
-python -m pip install --index-url https://pypi.org/simple/ -r requirements-docs.txt
-python -m mkdocs serve
-```
-
-Open `http://127.0.0.1:8000/` to preview the site. Build static HTML with:
-
-```powershell
-python -m mkdocs build --strict
-```
-
-The output is written to `site/`. `.github/workflows/docs.yml` can publish it automatically to GitHub Pages; see the [documentation-site guide](docs/en/documentation.md) for setup.
-
-## Community
-
-- QQ user group: `1097603920`
-- QQ developer group: `938132715`
-- [Discord](https://discord.gg/vVyCatEBgA)
-
-## Credits
-
-- [ok-script](https://github.com/ok-oldking/ok-script)
-- [OnnxOCR](https://github.com/ok-oldking/OnnxOCR)
-- [PyQt-Fluent-Widgets](https://github.com/zhiyiYo/PyQt-Fluent-Widgets)
+Push a tag starting with `v` (for example `v0.1.0`); GitHub Actions builds the installer and creates a release.

@@ -67,3 +67,5 @@ pip-log.txt
 pip-delete-this-directory.txt
 autohelper
 working_images/
+# 擷取模板時的整張截圖，只用來裁圖
+assets/lc/_screen.png

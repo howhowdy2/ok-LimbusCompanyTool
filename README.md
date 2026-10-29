@@ -1,65 +1,76 @@
-# ok-script-app
+# ok-LimbusCompanyTool
 
 [English](README_en.md) | 中文
 
-ok-script-app 是一个基于 [ok-script](https://github.com/ok-oldking/ok-script) 的 Python 自动化项目模板，支持为 Windows 原生游戏、Android 模拟器和浏览器游戏创建带 GUI 的自动化应用。
+用畫面辨識自動跑 **Limbus Company** 日常的工具，基於 [ok-script](https://github.com/ok-oldking/ok-script)。
+只看畫面、模擬滑鼠鍵盤，不讀取也不修改遊戲記憶體或遊戲檔案。
 
-这个仓库提供任务示例、OCR、模板匹配、配置控件、测试、i18n、EXE 打包和更新发布配置。它是起步工程和功能演示，不是某个具体游戏的自动化成品。
+> 個人學習用專案。自動化工具可能違反遊戲的服務條款，使用風險自負。
 
-## 文档
+## 功能
 
-完整文档已整理为 MkDocs 网站源文件：
+| 任務 | 說明 |
+|---|---|
+| 一鍵日常 | 打經驗本 → 把剩下的體力換成模組 |
+| 換體力 | 把腦啡肽(體力)全部換成腦啡肽模組，不會用狂氣 |
+| 打經驗本 | 用上次的隊伍打 Luxcavation EXP，可設定次數和關卡 |
+| 擷取模板 | 從目前的遊戲畫面截出辨識要用的圖片 |
 
-- [文档首页](docs/index.md)
-- [快速开始](docs/getting-started.md)
-- [应用与运行目标配置](docs/configuration.md)
-- [任务开发](docs/tasks.md)
-- [打包与发布](docs/release.md)
-- [构建文档网站](docs/documentation.md)
-- [English documentation](docs/en/index.md)
+## 遊戲設定
 
-## 快速预览
+- PC 版 (Steam)，畫面比例 **16:9**，建議 1920×1080 或 2560×1440
+- 語言：英文，或 LLC 簡體中文漢化
+- 執行時遊戲要在前景 (Limbus Company 在背景收不到點擊)
 
-```powershell
+## 開發環境
+
+需要 Windows 和 [Python 3.12](https://www.python.org/downloads/release/python-31210/)。
+
+```bat
+git clone https://github.com/howhowdy2/ok-LimbusCompanyTool.git
+cd ok-LimbusCompanyTool
 py -3.12 -m venv .venv
-.\.venv\Scripts\Activate.ps1
-$PypiIndex = "https://pypi.org/simple/"
-python -m pip install --index-url $PypiIndex --upgrade pip
-python -m pip install --index-url $PypiIndex --no-deps --upgrade -r requirements.txt
+.venv\Scripts\activate
+python -m pip install --index-url https://pypi.org/simple/ --upgrade pip
+python -m pip install --index-url https://pypi.org/simple/ --no-deps --upgrade -r requirements.txt
 python main_debug.py
 ```
 
-直接依赖统一维护在 `pyproject.toml`。`requirements.txt` 是 Qt profile 的锁定
-文件，`requirements-web.txt` 是 Web profile 的锁定文件；请勿直接编辑这些
-生成文件。Web profile 请将上面的依赖和启动命令分别替换为
-`requirements-web.txt` 和 `python web_main_debug.py`。官方 PyPI 的 pip 索引地址
-必须包含 `/simple/`；`https://pypi.org/` 不是有效的包索引地址。
+## 第一次使用：建立模板
 
-详细的仓库初始化、目标配置、首个任务和 tag 打包流程请阅读[快速开始](docs/getting-started.md)。
+辨識需要幾張遊戲畫面的小圖，存在 `assets/lc/`。開工具後用「擷取模板」任務建立：
 
-## 构建文档网站
+1. 遊戲停在**主畫面** → 擷取模板選 `home_window` → 開始
+2. 點主畫面的體力圖示打開**換體面板** → 選 `enk_max` → 開始
+3. 進任一關卡的**編隊畫面** → 選 `team_screen` → 開始
+4. 進 **Drive → Luxcavation 經驗本列表** → 選「整張截圖」→ 開始，
+   用小畫家打開 `assets/lc/_screen.png`，裁出關卡入口的「門」圖示，另存成 `assets/lc/exp_enter.png`
 
-```powershell
-python -m pip install --index-url https://pypi.org/simple/ -r requirements-docs.txt
-python -m mkdocs serve
+建好後把 `assets/lc/*.png` 一起 commit，打包時就會帶進去。
+
+## 專案結構
+
+```
+src/
+  config.py                 # 視窗、OCR、任務註冊
+  lc/layout.py              # 按鈕位置 (相對座標) 和 OCR 關鍵字，改版跑位就改這裡
+  lc/vision.py              # 模板比對、數字解析等純函式 (有單元測試)
+  tasks/LimbusBaseTask.py   # 共用：找模板、回主畫面、讀體力
+  tasks/*Task.py            # 各個任務
+tests/
+  test_vision.py            # python -m unittest tests.test_vision
 ```
 
-访问 `http://127.0.0.1:8000/` 预览。生成静态 HTML：
+## 打包發布
 
-```powershell
-python -m mkdocs build --strict
+推一個 `v` 開頭的 tag，GitHub Actions 會自動打包成安裝檔並建立 Release：
+
+```bat
+git tag v0.1.0
+git push origin v0.1.0
 ```
 
-输出位于 `site/`。`.github/workflows/docs.yml` 可将网站自动发布到 GitHub Pages，具体设置见[文档网站说明](docs/documentation.md)。
+## 致謝
 
-## 社区
-
-- 用户群：`1097603920`
-- 开发者群：`938132715`
-- [Discord](https://discord.gg/vVyCatEBgA)
-
-## 致谢
-
-- [ok-script](https://github.com/ok-oldking/ok-script)
-- [OnnxOCR](https://github.com/ok-oldking/OnnxOCR)
-- [PyQt-Fluent-Widgets](https://github.com/zhiyiYo/PyQt-Fluent-Widgets)
+- [ok-script](https://github.com/ok-oldking/ok-script) / [ok-script-app](https://github.com/ok-oldking/ok-script-app) 模板
+- [AhabAssistantLimbusCompany](https://github.com/KIYI671/AhabAssistantLimbusCompany)：參考了畫面流程

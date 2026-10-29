@@ -1,7 +1,7 @@
-site_name: ok-script-app
-site_description: Build Windows, Android emulator, and browser automation apps with ok-script.
-repo_name: ok-oldking/ok-script-app
-repo_url: https://github.com/ok-oldking/ok-script-app
+site_name: ok-LimbusCompanyTool
+site_description: Limbus Company automation tool built on ok-script.
+repo_name: howhowdy2/ok-LimbusCompanyTool
+repo_url: https://github.com/howhowdy2/ok-LimbusCompanyTool
 edit_uri: edit/master/docs/
 
 docs_dir: docs
