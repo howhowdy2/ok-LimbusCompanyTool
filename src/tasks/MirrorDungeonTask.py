@@ -82,9 +82,6 @@ class MirrorDungeonTask(LimbusBaseTask):
                                             f'(只列出第 {floor} 層普通或困難會出現的卡包)')
         self.config_type['Pack Avoid'] = {'type': 'drop_down',
                                           'options_available': pack_data.all_packs()}
-        # 設定畫面照這個順序顯示：各層想要的卡包排在避開清單和刷新/觀測前面
-        for key in ('Pack Avoid', 'Pack Use Refresh', 'Pack Use Observe'):
-            self.default_config[key] = self.default_config.pop(key)
         self.config_description.update({
             'Pack Difficulty': '卡包畫面右上的難度 (還沒通關困難卡包前可以切換)',
             'Pack Avoid': '不要的卡包，都沒有想要的卡包時會避開這些，也會優先把它們換掉',
@@ -122,6 +119,11 @@ class MirrorDungeonTask(LimbusBaseTask):
                       '例如「1 0」「2 2」，編號也可以寫名稱「起始之星 1」。編號 (由左到右、上到下)：'
                       + '、'.join(f'{i + 1}.{n}' for i, n in enumerate(GRACE_NAMES)),
         })
+        # 設定畫面照流程順序顯示：恩惠 → 饰品观测 → 卡包 (各層想要的 → 避開 → 刷新/觀測)
+        pack_keys = (['Pack Difficulty'] + [pack_key(f) for f in pack_data.FLOORS]
+                     + ['Pack Avoid', 'Pack Use Refresh', 'Pack Use Observe'])
+        for key in pack_keys:
+            self.default_config[key] = self.default_config.pop(key)
 
     def run(self):
         self.open_mirror_dungeon()
