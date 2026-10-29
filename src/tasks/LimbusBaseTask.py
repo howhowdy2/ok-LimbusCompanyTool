@@ -7,7 +7,7 @@ import cv2
 from ok import BaseTask, Box
 
 from src.lc import vision
-from src.lc.layout import POS, ROI
+from src.lc.layout import POS, ROI, TEXT
 
 TEMPLATE_DIR = Path('assets') / 'lc'
 
@@ -94,10 +94,29 @@ class LimbusBaseTask(BaseTask):
     def is_home(self) -> bool:
         return bool(self.find_template('home_window', threshold=0.8))
 
+    def handle_result_screen(self):
+        """在「战斗胜利 / 失败」結算畫面就按右下的确认，回傳 'victory' / 'defeat' / None。"""
+        title = ''.join(b.name for b in self.ocr_roi('result_title'))
+        if vision.keywords_regex(TEXT['victory']).search(title):
+            result = 'victory'
+        elif vision.keywords_regex(TEXT['defeat']).search(title):
+            result = 'defeat'
+        else:
+            return None
+        button = self.ocr_roi('result_confirm', TEXT['confirm'])
+        if button:
+            self.click_box(button, after_sleep=2)
+        else:
+            self.click_relative(0.896, 0.792, after_sleep=2)
+        self.info_incr('勝利' if result == 'victory' else '失敗')
+        return result
+
     def go_home(self):
-        """回到主畫面。有 home_window 模板時會確認，沒有就只點 Window 按鈕。"""
+        """回到主畫面。有 home_window 模板時會確認，沒有就按左上返回再點 Window。"""
         if not self.has_template('home_window'):
-            self.log_warning('沒有 home_window 模板，無法確認是否在主畫面，只點 Window 按鈕')
+            self.log_warning('沒有 home_window 模板，無法確認是否在主畫面')
+            for _ in range(2):
+                self.click_pos('back', after_sleep=1.5)
             self.click_pos('home_window', after_sleep=2)
             return
         for _ in range(6):

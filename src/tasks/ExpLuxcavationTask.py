@@ -136,6 +136,12 @@ class ExpLuxcavationTask(LimbusBaseTask):
         clicked_any = False
         while time.time() - start < 30:
             self.next_frame()
+            result = self.handle_result_screen()
+            if result:
+                clicked_any = True
+                if result == 'defeat':
+                    self.log_warning('跳過戰鬥顯示失敗')
+                continue
             confirm = self.ocr_roi('center', TEXT['confirm'])
             if confirm:
                 if self.ocr_roi('center', DANGER_TEXT):
@@ -191,6 +197,8 @@ class ExpLuxcavationTask(LimbusBaseTask):
             if self.on_stage_list():
                 self.log_info(f'戰鬥結束，用時 {int(time.time() - start)} 秒')
                 return
+            if self.handle_result_screen():
+                continue
             confirm = self.ocr_roi('lower_half', TEXT['confirm'])
             if confirm:
                 self.click_box(confirm, after_sleep=2)
