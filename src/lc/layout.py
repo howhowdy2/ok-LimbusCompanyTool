@@ -59,6 +59,7 @@ ROI = {
     'md_team_title': (0.16, 0.14, 0.26, 0.20),     # 目前選到的編隊名稱
     'md_star': (0.875, 0.715, 0.955, 0.78),        # 「星芒奖励 96」的數字
     'md_confirm': (0.84, 0.77, 0.95, 0.86),        # 右下「确认」
+    'md_dialog': (0.20, 0.25, 0.75, 0.85),         # 迷宮進度 / 終止確認 / 探索結束獎勵 視窗 (不含右下的进入)
     # 戰鬥中右下角的「胜率 / 伤害」按鈕 (行動槽變多時會往右移，範圍抓寬一點)
     'battle_hud': (0.72, 0.71, 0.90, 0.85),
     # 結算畫面 (战斗胜利)
@@ -105,6 +106,9 @@ TEXT = {
     'claim_all': ['Claim All', '全部领取'],
     'mirror_dungeon': ['Mirror Dungeon', '迷宫', '迷宮'],  # OCR 有時讀成繁體
     'md_not_started': ['探索前', 'Not Started'],
+    'md_continue': ['Continue', '继续'],
+    'md_abort': ['Abort', '终止探索'],
+    'md_give_up': ['Give Up', '放弃奖励'],
     'enter': ['Enter', '进入'],
     'victory': ['Victory', '胜利'],
     'defeat': ['Defeat', '失败'],

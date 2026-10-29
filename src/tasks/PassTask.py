@@ -49,10 +49,15 @@ class PassTask(LimbusBaseTask):
         if self.on_pass_screen():
             return
         self.go_home()
-        banner = self.ocr_roi('pass_banner', TEXT['pass_banner'])
-        self.click_pos('pass_banner', after_sleep=2)
-        if not banner:
+        # 通行證橫幅只在「玻璃窗」分頁出現 (停在驾驶席等其他分頁時看不到)
+        self.click_pos('home_window', after_sleep=1.5)
+        self.next_frame()
+        banner = self.wait_until(lambda: self.ocr_roi('pass_banner', TEXT['pass_banner']), time_out=5)
+        if banner:
+            self.click_box(banner, after_sleep=2)
+        else:
             self.log_warning('沒讀到「LIMBUS PASS」字樣，直接點橫幅位置')
+            self.click_pos('pass_banner', after_sleep=2)
         self.wait_for(self.on_pass_screen, time_out=10, what='通行證畫面')
 
     def click_tab(self, key):
