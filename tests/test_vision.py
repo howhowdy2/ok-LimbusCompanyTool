@@ -87,7 +87,19 @@ class ParseNumberTest(unittest.TestCase):
     def test_repeat(self):
         self.assertEqual(1, vision.parse_repeat('连续进行×1'))
         self.assertEqual(3, vision.parse_repeat('连续进行x 3'))
+        self.assertEqual(1, vision.parse_repeat('连续进行1'))  # × 沒讀到
         self.assertIsNone(vision.parse_repeat('连续进行×'))
+
+    def test_fraction(self):
+        self.assertEqual((0, 3), vision.parse_fraction('0/3'))
+        self.assertEqual((2, 3), vision.parse_fraction('2 / 3'))
+        self.assertIsNone(vision.parse_fraction('每日加成'))
+
+    def test_daily_bonus(self):
+        self.assertEqual((0, 3), vision.parse_daily_bonus('每日加成0/3'))
+        self.assertEqual((2, 3), vision.parse_daily_bonus('每日加成23'))  # 斜線沒讀到
+        self.assertIsNone(vision.parse_daily_bonus('每日加成0月'))
+        self.assertIsNone(vision.parse_daily_bonus('每日加成'))
 
     def test_int(self):
         self.assertEqual(285, vision.parse_int('285'))

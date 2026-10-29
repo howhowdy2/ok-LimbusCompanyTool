@@ -129,7 +129,48 @@ def parse_enkephalin(text: str) -> tuple[int, int] | None:
     return current, maximum
 
 
-_REPEAT = re.compile(r'[x×X\*]\s*(\d+)')
+def find_bright_blob(frame: np.ndarray, box_px, min_value: int = 200,
+                     min_area: int = 12) -> tuple[int, int] | None:
+    """在像素區域 box_px=(left, top, right, bottom) 裡找最大的一塊亮色(白色)圖形，回傳中心點。
+
+    用來找「连续进行」右邊的白色 ▲/▼：卡片寬度不同時，它離文字的距離也不同，
+    直接找圖形比固定位移可靠。
+    """
+    left, top, right, bottom = box_px
+    region = to_gray(frame[top:bottom, left:right])
+    if region.size == 0:
+        return None
+    mask = (region >= min_value).astype(np.uint8)
+    count, _, stats, centroids = cv2.connectedComponentsWithStats(mask)
+    best = None
+    for i in range(1, count):
+        area = stats[i, cv2.CC_STAT_AREA]
+        if area >= min_area and (best is None or area > stats[best, cv2.CC_STAT_AREA]):
+            best = i
+    if best is None:
+        return None
+    cx, cy = centroids[best]
+    return left + int(cx), top + int(cy)
+
+
+def parse_fraction(text: str) -> tuple[int, int] | None:
+    """'0/3' -> (0, 3)；讀不到回傳 None。"""
+    found = _ENKEPHALIN.search((text or '').replace(' ', ''))
+    return (int(found.group(1)), int(found.group(2))) if found else None
+
+
+def parse_daily_bonus(text: str, total: int = 3) -> tuple[int, int] | None:
+    """「每日加成 0/3」：斜線字體很花，常被讀成 '03'，這種情況也接受。"""
+    found = parse_fraction(text)
+    if found and found[1] == total and 0 <= found[0] <= total:
+        return found
+    digits = re.sub(r'\D', '', text or '')
+    if len(digits) == 2 and digits[1] == str(total) and int(digits[0]) <= total:
+        return int(digits[0]), total
+    return None
+
+
+_REPEAT = re.compile(r'(?:[x×X\*]|进行|Repeat)\s*(\d+)')
 
 
 def parse_repeat(text: str) -> int | None:
