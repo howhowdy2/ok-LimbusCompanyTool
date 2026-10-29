@@ -69,3 +69,5 @@ autohelper
 working_images/
 # 擷取模板時的整張截圖，只用來裁圖
 assets/lc/_screen.png
+# OCR 模型快取 (openvino / onnxruntime)
+cache/

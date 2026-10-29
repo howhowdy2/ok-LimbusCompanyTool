@@ -11,9 +11,9 @@ It only reads the screen and simulates mouse/keyboard input; it never reads or m
 
 | Task | What it does |
 |---|---|
-| Daily (一鍵日常) | EXP Luxcavation, then convert the remaining Enkephalin to modules |
+| Daily (一鍵日常) | Convert Enkephalin to modules, then run EXP Luxcavation |
 | Enkephalin (換體力) | Convert all Enkephalin into Enkephalin Modules (never spends Lunacy) |
-| EXP Luxcavation (打經驗本) | Run EXP Luxcavation with the last-used team; runs and stage are configurable |
+| EXP Luxcavation (打經驗本) | Skip Battle (default) or fight with the last-used team; runs and stage are configurable |
 | Capture Template (擷取模板) | Save the reference images used for recognition from the current game screen |
 
 ## Requirements
@@ -26,8 +26,8 @@ It only reads the screen and simulates mouse/keyboard input; it never reads or m
 ## First run: create templates
 
 Use the Capture Template task on: the home screen (`home_window`), the Enkephalin panel (`enk_max`),
-a team formation screen (`team_screen`), and the Luxcavation EXP list (full screenshot, then crop the door icon
-to `assets/lc/exp_enter.png`). Commit `assets/lc/*.png` afterwards.
+and a team formation screen (`team_screen`). Luxcavation buttons are found with OCR and need no template.
+Commit `assets/lc/*.png` afterwards.
 
 ## Release
 

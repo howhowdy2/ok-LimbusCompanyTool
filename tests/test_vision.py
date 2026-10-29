@@ -83,6 +83,18 @@ class ParseEnkephalinTest(unittest.TestCase):
         self.assertIsNone(vision.parse_enkephalin('9999/12'))
 
 
+class ParseNumberTest(unittest.TestCase):
+    def test_repeat(self):
+        self.assertEqual(1, vision.parse_repeat('连续进行×1'))
+        self.assertEqual(3, vision.parse_repeat('连续进行x 3'))
+        self.assertIsNone(vision.parse_repeat('连续进行×'))
+
+    def test_int(self):
+        self.assertEqual(285, vision.parse_int('285'))
+        self.assertEqual(60, vision.parse_int('6O'))
+        self.assertIsNone(vision.parse_int('LUNACY'))
+
+
 class KeywordsRegexTest(unittest.TestCase):
     def test_contains_and_ignores_case(self):
         pattern = vision.keywords_regex(['To Battle', '出击'])

@@ -129,6 +129,21 @@ def parse_enkephalin(text: str) -> tuple[int, int] | None:
     return current, maximum
 
 
+_REPEAT = re.compile(r'[x×X\*]\s*(\d+)')
+
+
+def parse_repeat(text: str) -> int | None:
+    """「连续进行×3」-> 3。"""
+    found = _REPEAT.search(text or '')
+    return int(found.group(1)) if found else None
+
+
+def parse_int(text: str) -> int | None:
+    """從 OCR 文字取出整數，'2,85' 或 '285' -> 285；讀不到回傳 None。"""
+    digits = re.sub(r'\D', '', (text or '').replace('O', '0').replace('o', '0'))
+    return int(digits) if digits else None
+
+
 def keywords_regex(keywords) -> re.Pattern:
     """關鍵字清單 -> 不分大小寫、包含即可的 regex，給 ok-script 的 ocr(match=...) 用。"""
     if isinstance(keywords, str):
