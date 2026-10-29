@@ -16,7 +16,7 @@ It only reads the screen and simulates mouse/keyboard input; it never reads or m
 | Thread Luxcavation (打纺锤本) | Skip today's open Thread stage, 3 times by default, limited to the remaining daily bonus |
 | EXP Luxcavation (打經驗本) | Skip Battle (default) or fight with the last-used team; runs and stage are configurable |
 | Pass Rewards (領通行證獎勵) | Open LIMBUS PASS from home, claim daily / weekly missions, then Claim All (optional) |
-| Mirror Dungeon (鏡像迷宮) | Enter the dungeon and pick a team by star reward; in-dungeon play is not done yet |
+| Mirror Dungeon (鏡像迷宮) | Enter the dungeon and pick a team by star reward; then choose Star Graces and starting E.G.O gifts; later floors are not done yet |
 | Capture Template (擷取模板) | Save the reference images used for recognition from the current game screen |
 
 ## Requirements

@@ -1,11 +1,23 @@
 import time
 
 from src.lc import vision
-from src.lc.layout import TEXT
+from src.lc.layout import (GIFT_CARD_X, GIFT_CARD_Y, GIFT_KEYWORDS, GIFT_SCROLL_ARROW,
+                           GRACE_COL_X, GRACE_NAMES, GRACE_PLUS_DX, GRACE_PLUS_Y,
+                           GRACE_PLUSPLUS_DX, GRACE_ROW_Y, TEXT)
 from src.tasks.LimbusBaseTask import LimbusBaseTask, TaskFailed
 
 IN_PROGRESS_CONTINUE = '繼續探索'
 IN_PROGRESS_ABORT = '終止探索 (放棄獎勵)'
+
+GRACE_OFF = '不選'
+GRACE_LEVELS = [GRACE_OFF, '0 級', '+', '++']
+GRACE_DEFAULT_ON = (1, 3, 5)   # 預設選 1、3、5，0 級
+GIFT_PICK_OPTIONS = ['1', '2', '3']
+DANGER_TEXT = ['不足', 'Not enough', '狂气', 'Lunacy']
+
+
+def grace_key(index: int) -> str:
+    return f'Grace {index + 1} {GRACE_NAMES[index]}'
 
 
 class MirrorDungeonTask(LimbusBaseTask):
@@ -23,15 +35,25 @@ class MirrorDungeonTask(LimbusBaseTask):
         self.default_config.update({
             'Min Star Reward': 0,
             'If In Progress': IN_PROGRESS_CONTINUE,
+            'Gift Keyword': '呼吸法',
+            'Gift Picks': ['1'],
         })
+        for i in range(len(GRACE_NAMES)):
+            self.default_config[grace_key(i)] = '0 級' if i + 1 in GRACE_DEFAULT_ON else GRACE_OFF
+            self.config_type[grace_key(i)] = {'type': 'drop_down', 'options': GRACE_LEVELS}
         self.config_type.update({
             'If In Progress': {'type': 'drop_down',
                                'options': [IN_PROGRESS_CONTINUE, IN_PROGRESS_ABORT]},
+            'Gift Keyword': {'type': 'drop_down', 'options': GIFT_KEYWORDS},
+            'Gift Picks': {'type': 'multi_selection', 'options': GIFT_PICK_OPTIONS},
         })
         self.config_description.update({
             'Min Star Reward': '編隊畫面「星芒奖励」低於這個數字，就依序換名稱有「镜像迷宫」的編隊，'
                                '直到夠高為止 (都不夠就用最高的那隊)。0 = 不換，用目前的編隊',
             'If In Progress': '上次的迷宮還沒結束時：繼續，或終止並放棄獎勵後重新開一場',
+            'Gift Keyword': '開局選 E.G.O 饰品時，左邊要選哪一種關鍵字',
+            'Gift Picks': '右邊三個饰品要選哪幾個 (由上到下 1~3)。'
+                          '實際能選幾個看畫面「选择 0/N」，超過的會依序略過',
         })
 
     def run(self):
@@ -41,7 +63,9 @@ class MirrorDungeonTask(LimbusBaseTask):
             return
         self.choose_team()
         self.confirm_team()
-        self.log_info('已進入鏡像迷宮 (迷宮內流程尚未實作，請手動接手)', notify=True)
+        self.choose_graces()
+        self.choose_start_gifts()
+        self.log_info('已選好恩惠和開局饰品 (之後的流程尚未實作，請手動接手)', notify=True)
 
     # ---------- 進入 ----------
 
@@ -72,15 +96,22 @@ class MirrorDungeonTask(LimbusBaseTask):
             raise TaskFailed('終止探索後還是沒有回到「探索前」')
         status = ''.join(b.name for b in self.ocr_roi('md_status'))
         self.info_set('探索状态', status)
-        self.click_md_enter()
 
         if vision.keywords_regex(TEXT['md_not_started']).search(status):
-            # 「是否进入西西弗之镜?」
-            ok = self.wait_for(lambda: self.ocr_roi('md_popup_btn', TEXT['enter']),
-                               time_out=8, what='「是否进入」視窗')
-            self.click_box(ok, after_sleep=2.5)
+            # 剛放棄獎勵回來時畫面還在動畫，第一次按「进入」常被忽略，所以等不到視窗就再按
+            for _ in range(3):
+                self.click_md_enter()
+                ok = self.wait_until(lambda: self.ocr_roi('md_popup_btn', TEXT['enter']), time_out=4)
+                if ok:
+                    break
+            else:
+                self.screenshot('fail_md_enter_popup')
+                raise TaskFailed('按了 3 次「进入」都等不到「是否进入」視窗')
+            self.click_box(ok, after_sleep=2.5)  # 「是否进入西西弗之镜?」
             self.wait_for(self.on_team_screen, time_out=15, what='鏡像迷宮編隊畫面')
             return 'new'
+
+        self.click_md_enter()
 
         # 探索中 →「迷宫进度」；探索完成 →「探索结束奖励」
         self.wait_for(lambda: self.dialog('md_continue') or self.dialog('md_give_up'),
@@ -117,6 +148,7 @@ class MirrorDungeonTask(LimbusBaseTask):
             self.sleep(0.5)
         self.wait_for(lambda: vision.keywords_regex(TEXT['md_not_started']).search(
             ''.join(b.name for b in self.ocr_roi('md_status'))), time_out=10, what='探索前')
+        self.sleep(2)  # 等關閉視窗的動畫結束，不然下一次按「进入」會被忽略
 
     # ---------- 編隊 ----------
 
@@ -192,3 +224,133 @@ class MirrorDungeonTask(LimbusBaseTask):
             self.sleep(0.5)
         self.screenshot('fail_md_confirm')
         raise TaskFailed('按了确认還是停在編隊畫面')
+
+    # ---------- 星之恩惠 ----------
+
+    def on_grace_screen(self):
+        return self.ocr_roi('grace_title', TEXT['grace_title'])
+
+    def grace_popup(self):
+        return self.ocr_roi('grace_popup', TEXT['grace_popup'])
+
+    def choose_graces(self):
+        self.wait_for(self.on_grace_screen, time_out=20, what='星之恩惠畫面')
+        self.sleep(1.5)
+        chosen = []
+        for i, name in enumerate(GRACE_NAMES):
+            level = self.config.get(grace_key(i), GRACE_OFF)
+            if level == GRACE_OFF:
+                continue
+            col, row = i % 5, i // 5
+            x = GRACE_COL_X[col]
+            if level == '+':
+                x, y = x + GRACE_PLUS_DX, GRACE_PLUS_Y[row]
+            elif level == '++':
+                x, y = x + GRACE_PLUSPLUS_DX, GRACE_PLUS_Y[row]
+            else:
+                y = GRACE_ROW_Y[row]
+            self.click_relative(x, y, after_sleep=1.2)
+            popup = self.wait_until(self.grace_popup, time_out=4)
+            if not popup:
+                self.log_warning(f'點了恩惠 {i + 1} {name} ({level}) 沒有跳出確認視窗，略過')
+                continue
+            if self.ocr_roi('center', DANGER_TEXT):
+                self.log_warning(f'恩惠 {i + 1} {name}：星芒不足，取消')
+                self.click_box(self.ocr_roi('center', ['取消', 'Cancel']), after_sleep=1)
+                continue
+            ok = self.ocr_roi('grace_popup_btn', TEXT['confirm'])
+            if ok:
+                self.click_box(ok, after_sleep=1.2)
+            else:
+                self.click_relative(0.585, 0.741, after_sleep=1.2)
+            chosen.append(f'{i + 1}.{name}({level})')
+        self.info_set('星之恩惠', '、'.join(chosen) or '沒選')
+
+        done = self.wait_for(lambda: self.ocr_roi('grace_done', TEXT['grace_done']),
+                             time_out=5, what='恩惠畫面的「完成」')
+        self.click_box(done, after_sleep=2)
+        # 「完成」後可能再問一次
+        for _ in range(3):
+            self.next_frame()
+            if self.on_gift_screen():
+                return
+            ok = self.ocr_roi('center', TEXT['confirm'])
+            if ok:
+                self.click_box(ok, after_sleep=2)
+            else:
+                self.sleep(1)
+
+    # ---------- 開局 E.G.O 饰品 ----------
+
+    def on_gift_screen(self):
+        return self.ocr_roi('gift_title', TEXT['gift_title']) and \
+            self.ocr_roi('gift_select', TEXT['select'])
+
+    def find_keyword(self, keyword):
+        boxes = self.ocr_roi('gift_keywords')
+        return next((b for b in boxes if b.name.strip() == keyword), None)
+
+    def gift_limit(self) -> int:
+        found = vision.parse_fraction(''.join(b.name for b in self.ocr_roi('gift_count')))
+        return found[1] if found else 1
+
+    def choose_start_gifts(self):
+        self.wait_for(self.on_gift_screen, time_out=20, what='選擇E.G.O饰品畫面')
+        self.sleep(1)
+        keyword = self.config.get('Gift Keyword', '呼吸法')
+        box = self.find_keyword(keyword)
+        if box is None:  # 最後兩種要往下捲
+            self.scroll_relative(0.34, 0.55, -5)
+            self.sleep(1)
+            self.next_frame()
+            box = self.find_keyword(keyword)
+            if box is None:
+                self.click_relative(*GIFT_SCROLL_ARROW, after_sleep=1)
+                box = self.find_keyword(keyword)
+        if box is None:
+            self.screenshot('fail_gift_keyword')
+            raise TaskFailed(f'找不到饰品關鍵字「{keyword}」')
+        # 點標題下方的饰品區塊
+        self.click(box.x + box.width // 2, box.y + int(self.height * 0.12), after_sleep=1.5)
+
+        limit = self.gift_limit()
+        self.info_set('可選饰品數', limit)
+        picks = sorted({int(p) for p in self.config.get('Gift Picks', ['1'])}) or [1]
+        picks = picks[:limit]
+        for n in picks:
+            self.click_relative(GIFT_CARD_X, GIFT_CARD_Y[n - 1], after_sleep=0.8)
+        self.next_frame()
+        count = vision.parse_fraction(''.join(b.name for b in self.ocr_roi('gift_count')))
+        if count and count[0] != len(picks):
+            self.log_warning(f'想選 {len(picks)} 個，畫面上是 {count[0]}/{count[1]}')
+
+        button = self.wait_for(lambda: self.ocr_roi('gift_select', TEXT['select']),
+                               time_out=5, what='「选择」按鈕')
+        self.click_box(button, after_sleep=2)
+        self.collect_gift_popups()
+
+    def collect_gift_popups(self, timeout: float = 15):
+        """「获得E.G.O饰品!」：記下名稱，按确认，直到不再出現。"""
+        gifts = getattr(self, 'acquired_gifts', [])
+        start = time.time()
+        seen_any = False
+        while time.time() - start < timeout:
+            self.next_frame()
+            if self.ocr_roi('gift_got_title', TEXT['gift_got']):
+                name = ''.join(b.name for b in self.ocr_roi('gift_got_name')).strip() or '(讀不到名稱)'
+                gifts.append(name)
+                self.log_info(f'獲得 E.G.O 饰品：{name}')
+                ok = self.ocr_roi('gift_got_ok', TEXT['confirm'])
+                if ok:
+                    self.click_box(ok, after_sleep=1.5)
+                else:
+                    self.click_relative(0.5, 0.741, after_sleep=1.5)
+                seen_any = True
+                continue
+            if seen_any:
+                break
+            self.sleep(0.5)
+        self.acquired_gifts = gifts
+        self.info_set('獲得饰品', '、'.join(gifts) or '無')
+        if not seen_any:
+            self.log_warning('按了「选择」後沒有看到「获得E.G.O饰品」')
