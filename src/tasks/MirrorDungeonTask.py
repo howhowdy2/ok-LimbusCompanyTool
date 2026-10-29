@@ -11,15 +11,33 @@ from src.tasks.LimbusBaseTask import LimbusBaseTask, TaskFailed
 IN_PROGRESS_CONTINUE = '繼續探索'
 IN_PROGRESS_ABORT = '終止探索 (放棄獎勵)'
 
-GRACE_OFF = '不選'
-GRACE_LEVELS = [GRACE_OFF, '0 級', '+', '++']
-GRACE_DEFAULT_ON = (1, 3, 5)   # 預設選 1、3、5，0 級
+GRACE_LEVELS = ['0', '+', '++']
+GRACE_DEFAULT = ['1 0', '3 0', '5 0']   # 預設選 1、3、5，0 級
 GIFT_PICK_OPTIONS = ['1', '2', '3']
-DANGER_TEXT = ['不足', 'Not enough', '狂气', 'Lunacy']
+OBSERVE_OFF = '不選'
+OBSERVE_TIERS = ['III', 'II', 'I']
+OBSERVE_SLOTS = 3
 
 
-def grace_key(index: int) -> str:
-    return f'Grace {index + 1} {GRACE_NAMES[index]}'
+def observe_keys(slot: int):
+    return f'Observe {slot} Type', f'Observe {slot} Tier', f'Observe {slot} Index'
+
+
+def parse_grace_line(text: str):
+    """「1 +」「起始之星 ++」「3」-> (index 0~9, '0' / '+' / '++')；看不懂回傳 None。"""
+    parts = str(text).replace('：', ' ').replace(':', ' ').split()
+    if not parts:
+        return None
+    head, level = parts[0], (parts[1] if len(parts) > 1 else '0')
+    if level in ('0級', '0 級', '無'):
+        level = '0'
+    if level not in GRACE_LEVELS:
+        return None
+    if head.isdigit() and 1 <= int(head) <= len(GRACE_NAMES):
+        return int(head) - 1, level
+    if head in GRACE_NAMES:
+        return GRACE_NAMES.index(head), level
+    return None
 
 
 class MirrorDungeonTask(LimbusBaseTask):
@@ -39,11 +57,22 @@ class MirrorDungeonTask(LimbusBaseTask):
             'If In Progress': IN_PROGRESS_CONTINUE,
             'Gift Keyword': '呼吸法',
             'Gift Picks': ['1'],
-            'Observe Gifts': [],
+            'Graces': list(GRACE_DEFAULT),
         })
-        for i in range(len(GRACE_NAMES)):
-            self.default_config[grace_key(i)] = '0 級' if i + 1 in GRACE_DEFAULT_ON else GRACE_OFF
-            self.config_type[grace_key(i)] = {'type': 'drop_down', 'options': GRACE_LEVELS}
+        for slot in range(1, OBSERVE_SLOTS + 1):
+            type_key, tier_key, index_key = observe_keys(slot)
+            self.default_config.update({type_key: OBSERVE_OFF, tier_key: 'III', index_key: 1})
+            self.config_type[type_key] = {
+                'type': 'drop_down', 'options': [OBSERVE_OFF] + OBSERVE_TYPES,
+                # 選了類型才顯示等級和第幾個
+                'sub_configs': {kind: [tier_key, index_key] for kind in OBSERVE_TYPES},
+            }
+            self.config_type[tier_key] = {'type': 'drop_down', 'options': OBSERVE_TIERS}
+            self.config_description.update({
+                type_key: f'E.G.O饰品观测 第 {slot} 個要選的饰品類型。三個都「不選」= 拒绝饰品 (不花星芒)',
+                tier_key: '饰品等級 (III 在最上面)',
+                index_key: '該等級的第幾個，由左到右、上到下數 (每列 8 個，第 9 個是第二列第 1 個)',
+            })
         self.config_type.update({
             'If In Progress': {'type': 'drop_down',
                                'options': [IN_PROGRESS_CONTINUE, IN_PROGRESS_ABORT]},
@@ -57,9 +86,9 @@ class MirrorDungeonTask(LimbusBaseTask):
             'Gift Keyword': '開局選 E.G.O 饰品時，左邊要選哪一種關鍵字',
             'Gift Picks': '右邊三個饰品要選哪幾個 (由上到下 1~3)。'
                           '實際能選幾個看畫面「选择 0/N」，超過的會依序略過',
-            'Observe Gifts': 'E.G.O饰品观测 要選的饰品，最多 3 個，一行一個，格式「類型 等級 第幾個」，'
-                             '例如「烧伤 3 1」= 烧伤分頁 III 級的第 1 個 (每列 8 個，第 9 個是第二列第 1 個)。'
-                             '類型：' + ' '.join(OBSERVE_TYPES) + '。留空 = 拒绝饰品 (不花星芒)',
+            'Graces': '要選的星之恩惠，一行一個，格式「編號 等級」，等級是 0 / + / ++，'
+                      '例如「1 0」「2 ++」，編號也可以寫名稱「起始之星 +」。編號 (由左到右、上到下)：'
+                      + '、'.join(f'{i + 1}.{n}' for i, n in enumerate(GRACE_NAMES)),
         })
 
     def run(self):
@@ -244,10 +273,13 @@ class MirrorDungeonTask(LimbusBaseTask):
         self.wait_for(self.on_grace_screen, time_out=20, what='星之恩惠畫面')
         self.sleep(1.5)
         chosen = []
-        for i, name in enumerate(GRACE_NAMES):
-            level = self.config.get(grace_key(i), GRACE_OFF)
-            if level == GRACE_OFF:
+        for line in self.config.get('Graces', []):
+            parsed = parse_grace_line(line)
+            if parsed is None:
+                self.log_warning(f'看不懂恩惠設定「{line}」，格式要像「1 0」或「2 ++」')
                 continue
+            i, level = parsed
+            name = GRACE_NAMES[i]
             col, row = i % 5, i // 5
             x = GRACE_COL_X[col]
             if level == '+':
@@ -371,22 +403,6 @@ class MirrorDungeonTask(LimbusBaseTask):
     def tier_bands(self):
         return vision.find_tier_bands(self.frame)
 
-    @staticmethod
-    def parse_observe_pick(text):
-        """「烧伤 3 1」-> ('烧伤', 3, 1)；格式不對回傳 None。"""
-        parts = text.replace(',', ' ').replace('-', ' ').split()
-        if len(parts) != 3 or parts[0] not in OBSERVE_TYPES:
-            return None
-        tier = {'III': 3, 'II': 2, 'I': 1}.get(parts[1].upper(), None)
-        try:
-            tier = tier or int(parts[1])
-            index = int(parts[2])
-        except ValueError:
-            return None
-        if tier not in (1, 2, 3) or index < 1:
-            return None
-        return parts[0], tier, index
-
     def open_observe_tab(self, kind):
         i = OBSERVE_TYPES.index(kind)
         self.click_relative(OBSERVE_TAB_X[i], OBSERVE_TAB_Y, after_sleep=1.2)
@@ -418,13 +434,13 @@ class MirrorDungeonTask(LimbusBaseTask):
         self.wait_for(self.on_observe_screen, time_out=20, what='E.G.O饰品观测畫面')
         self.sleep(1)
         picks = []
-        for line in self.config.get('Observe Gifts', [])[:3]:
-            parsed = self.parse_observe_pick(str(line))
-            if parsed is None:
-                self.log_warning(f'看不懂饰品观测設定「{line}」，格式要像「烧伤 3 1」')
-            else:
-                picks.append(parsed)
-
+        for slot in range(1, OBSERVE_SLOTS + 1):
+            type_key, tier_key, index_key = observe_keys(slot)
+            kind = self.config.get(type_key, OBSERVE_OFF)
+            if kind == OBSERVE_OFF:
+                continue
+            tier = {'III': 3, 'II': 2, 'I': 1}.get(self.config.get(tier_key, 'III'), 3)
+            picks.append((kind, tier, max(1, int(self.config.get(index_key, 1)))))
         if not picks:
             self.log_info('沒有設定要觀測的饰品，拒绝饰品')
             self.click_box(self.wait_for(lambda: self.ocr_roi('observe_reject', TEXT['reject']),
