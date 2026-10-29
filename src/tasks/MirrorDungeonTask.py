@@ -256,40 +256,34 @@ class MirrorDungeonTask(LimbusBaseTask):
                 x, y = x + GRACE_PLUSPLUS_DX, GRACE_PLUS_Y[row]
             else:
                 y = GRACE_ROW_Y[row]
-            self.click_relative(x, y, after_sleep=1.2)
-            # 「+」「++」直接選好，不會跳視窗；0 級 (點卡片) 才會問「要选择此效果吗?」
-            popup = self.wait_until(self.grace_popup, time_out=4 if level == '0 級' else 1)
-            if not popup:
-                if level == '0 級':
-                    self.log_warning(f'點了恩惠 {i + 1} {name} 沒有跳出確認視窗，略過')
-                else:
-                    chosen.append(f'{i + 1}.{name}({level})')
-                continue
-            if self.ocr_roi('center', DANGER_TEXT):
-                self.log_warning(f'恩惠 {i + 1} {name}：星芒不足，取消')
-                self.click_box(self.ocr_roi('center', ['取消', 'Cancel']), after_sleep=1)
-                continue
-            ok = self.ocr_roi('grace_popup_btn', TEXT['confirm'])
-            if ok:
-                self.click_box(ok, after_sleep=1.2)
-            else:
-                self.click_relative(0.585, 0.741, after_sleep=1.2)
+            # 點卡片 / +/ ++ 都是直接選好，不會跳視窗 (確認視窗是按「完成」後才出現)
+            self.click_relative(x, y, after_sleep=0.8)
             chosen.append(f'{i + 1}.{name}({level})')
         self.info_set('星之恩惠', '、'.join(chosen) or '沒選')
 
         done = self.wait_for(lambda: self.ocr_roi('grace_done', TEXT['grace_done']),
                              time_out=5, what='恩惠畫面的「完成」')
-        self.click_box(done, after_sleep=2)
-        # 「完成」後可能再問一次
-        for _ in range(3):
+        self.click_box(done, after_sleep=1.5)
+        # 「完成」後跳出「要选择此效果吗?」→ 确认 (沒選任何恩惠時可能不會跳)
+        start = time.time()
+        while time.time() - start < 15:
             self.next_frame()
             if self.on_gift_screen():
                 return
+            if self.grace_popup():
+                ok = self.ocr_roi('grace_popup_btn', TEXT['confirm'])
+                if ok:
+                    self.click_box(ok, after_sleep=2)
+                else:
+                    self.click_relative(0.585, 0.741, after_sleep=2)
+                continue
             ok = self.ocr_roi('center', TEXT['confirm'])
             if ok:
                 self.click_box(ok, after_sleep=2)
-            else:
-                self.sleep(1)
+                continue
+            self.sleep(0.5)
+        self.screenshot('fail_grace_done')
+        raise TaskFailed('按了「完成」之後沒有進到選擇E.G.O饰品')
 
     # ---------- 開局 E.G.O 饰品 ----------
 
