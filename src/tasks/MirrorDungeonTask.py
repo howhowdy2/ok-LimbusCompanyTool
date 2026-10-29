@@ -1,7 +1,9 @@
 import time
 
 from src.lc import vision
-from src.lc.layout import (OBSERVE_COL_X0, OBSERVE_COL_DX, OBSERVE_ROW_DY, OBSERVE_ROW_DY0,
+from src.lc.layout import (PACK_DRAG_FROM_Y, PACK_DRAG_TO_Y, PACK_MODE_ARROW, PACK_OBS_ICON_DX,
+                           PACK_OBS_ICON_Y, PACK_OBSERVE_BTN,
+                           OBSERVE_COL_X0, OBSERVE_COL_DX, OBSERVE_ROW_DY, OBSERVE_ROW_DY0,
                            OBSERVE_TAB_X, OBSERVE_TAB_Y, OBSERVE_TYPES, OBSERVE_VISIBLE_BOTTOM,
                            GIFT_CARD_X, GIFT_CARD_Y, GIFT_KEYWORDS, GIFT_SCROLL_ARROW,
                            GRACE_COL_X, GRACE_NAMES, GRACE_PLUS_DX, GRACE_PLUS_Y,
@@ -17,6 +19,7 @@ GIFT_PICK_OPTIONS = ['1', '2', '3']
 OBSERVE_OFF = '不選'
 OBSERVE_TIERS = ['III', 'II', 'I']
 OBSERVE_SLOTS = 3
+MODE_KEEP, MODE_HARD, MODE_NORMAL = '不切換', '困难', '普通'
 
 
 def observe_keys(slot: int):
@@ -57,6 +60,20 @@ class MirrorDungeonTask(LimbusBaseTask):
             'Gift Keyword': '呼吸法',
             'Gift Picks': ['1'],
             'Graces': list(GRACE_DEFAULT),
+            'Pack Difficulty': MODE_KEEP,
+            'Pack Priority': [],
+            'Pack Avoid': [],
+            'Pack Use Refresh': True,
+            'Pack Use Observe': False,
+        })
+        self.config_type['Pack Difficulty'] = {'type': 'drop_down',
+                                               'options': [MODE_KEEP, MODE_HARD, MODE_NORMAL]}
+        self.config_description.update({
+            'Pack Difficulty': '卡包畫面右上的難度 (還沒通關困難卡包前可以切換)',
+            'Pack Priority': '想要的主題卡包，一行一個，越上面越優先。寫「2:自动工厂」= 只在第 2 層找',
+            'Pack Avoid': '不要的卡包，都沒有想要的卡包時會避開這些，也會優先把它們換掉',
+            'Pack Use Refresh': '畫面上沒有想要的卡包時，用右上「刷新」(用完為止)',
+            'Pack Use Observe': '刷新用完還是沒有時，用「主题卡包观测」把一個卡包換成想要的 (可能花星芒)',
         })
         for slot in range(1, OBSERVE_SLOTS + 1):
             type_key, tier_key, index_key = observe_keys(slot)
@@ -100,7 +117,8 @@ class MirrorDungeonTask(LimbusBaseTask):
         self.choose_graces()
         self.choose_start_gifts()
         self.observe_gifts()
-        self.log_info('已到主題卡包選擇 (之後的流程尚未實作，請手動接手)', notify=True)
+        self.choose_pack()
+        self.log_info('已選好第 1 層主題卡包 (之後的流程尚未實作，請手動接手)', notify=True)
 
     # ---------- 進入 ----------
 
@@ -495,3 +513,143 @@ class MirrorDungeonTask(LimbusBaseTask):
             self.sleep(1)
         self.screenshot('fail_observe')
         raise TaskFailed('饰品观测之後沒有進到主題卡包選擇')
+
+    # ---------- 主題卡包 ----------
+
+    def pack_rules(self, key):
+        return [vision.parse_pack_rule(str(line)) for line in self.config.get(key, []) if str(line).strip()]
+
+    def pack_floor(self):
+        text = ''.join(b.name for b in self.ocr_roi('pack_title'))
+        found = vision.parse_int(text)
+        return found if found and found < 20 else 1
+
+    def visible_packs(self):
+        return sorted([b for b in self.ocr_roi('pack_names') if len(b.name.strip()) >= 2],
+                      key=lambda b: b.x)
+
+    def pack_center_x(self, box):
+        return (box.x + box.width / 2) / self.width
+
+    def best_pack(self, packs, rules, floor):
+        ranked = [(vision.rule_matches(rules, floor, b.name), b) for b in packs]
+        ranked = [(rank, b) for rank, b in ranked if rank is not None]
+        return min(ranked, key=lambda r: r[0])[1] if ranked else None
+
+    def set_pack_difficulty(self):
+        want = self.config.get('Pack Difficulty', MODE_KEEP)
+        if want == MODE_KEEP:
+            return
+        is_hard = bool(self.ocr_roi('pack_mode', TEXT['hard']))
+        if is_hard == (want == MODE_HARD):
+            return
+        self.log_info(f'卡包難度切換為{want}')
+        self.click_relative(*PACK_MODE_ARROW, after_sleep=2)
+        self.next_frame()
+        if bool(self.ocr_roi('pack_mode', TEXT['hard'])) == is_hard:
+            self.log_warning('難度切換沒有反應 (可能已經不能切換了)')
+
+    def refreshes_left(self):
+        found = vision.parse_fraction(''.join(b.name for b in self.ocr_roi('pack_refresh')))
+        return found[0] if found else 0
+
+    def drag_pack(self, box):
+        x = self.pack_center_x(box)
+        self.log_info(f'選擇主題卡包：{box.name}')
+        self.info_set('主題卡包', box.name)
+        self.swipe_relative(x, PACK_DRAG_FROM_Y, x, PACK_DRAG_TO_Y, duration=0.8)
+        self.sleep(2)
+        start = time.time()
+        while time.time() - start < 15:
+            self.next_frame()
+            if not self.ocr_roi('pack_title', TEXT['pack_title']):
+                return
+            if self.handle_gift_popup():
+                continue
+            ok = self.ocr_roi('center', TEXT['confirm'])
+            if ok:
+                self.click_box(ok, after_sleep=2)
+                continue
+            self.sleep(1)
+        self.screenshot('fail_pack_drag')
+        raise TaskFailed(f'拖了「{box.name}」還是停在卡包選擇畫面')
+
+    def choose_pack(self):
+        self.wait_for(lambda: self.ocr_roi('pack_title', TEXT['pack_title']),
+                      time_out=30, what='主題卡包選擇畫面')
+        self.sleep(1.5)
+        self.set_pack_difficulty()
+        floor = self.pack_floor()
+        want, avoid = self.pack_rules('Pack Priority'), self.pack_rules('Pack Avoid')
+
+        for _ in range(10):
+            self.next_frame()
+            packs = self.visible_packs()
+            self.info_set('卡包選項', '、'.join(b.name for b in packs))
+            best = self.best_pack(packs, want, floor)
+            if best is not None:
+                return self.drag_pack(best)
+            if not want:
+                break
+            if self.config.get('Pack Use Refresh', True) and self.refreshes_left() > 0:
+                self.log_info('沒有想要的卡包，刷新')
+                self.click_box(self.ocr_roi('pack_refresh', TEXT['refresh']), after_sleep=2.5)
+                continue
+            break
+
+        packs = self.visible_packs()
+        if want and self.config.get('Pack Use Observe') and packs:
+            replaced = self.observe_pack(packs, want, avoid, floor)
+            if replaced:
+                self.next_frame()
+                best = self.best_pack(self.visible_packs(), want, floor)
+                if best is not None:
+                    return self.drag_pack(best)
+
+        # 沒有想要的：選第一個不在避開清單的
+        packs = self.visible_packs()
+        if not packs:
+            self.screenshot('fail_pack_names')
+            raise TaskFailed('讀不到卡包名稱')
+        normal = [b for b in packs if vision.rule_matches(avoid, floor, b.name) is None]
+        self.drag_pack((normal or packs)[0])
+
+    def observe_pack(self, packs, want, avoid, floor) -> bool:
+        """用主题卡包观测把一個卡包換成想要的。回傳 True = 換好了。"""
+        self.click_relative(*PACK_OBSERVE_BTN, after_sleep=2)
+        self.next_frame()
+        ok = self.ocr_roi('md_popup_btn', TEXT['confirm'])   # 可能先問要不要花星芒
+        if ok:
+            self.click_box(ok, after_sleep=2)
+        # 換掉最不想要的那一個：避開清單裡的優先，否則最右邊
+        target = next((b for b in packs if vision.rule_matches(avoid, floor, b.name) is not None),
+                      packs[-1])
+        self.click_relative(self.pack_center_x(target) + PACK_OBS_ICON_DX, PACK_OBS_ICON_Y,
+                            after_sleep=2)
+        if not self.wait_until(lambda: self.ocr_roi('pack_obs_title', TEXT['pack_obs_title']),
+                               time_out=6):
+            self.log_warning('沒有打開卡包觀測視窗')
+            return False
+
+        for _ in range(4):
+            self.next_frame()
+            boxes = self.ocr_roi('pack_obs_list')
+            blocked = [b for b in boxes if vision.keywords_regex(TEXT['unavailable']).search(b.name)]
+            names = [b for b in boxes if b not in blocked and len(b.name.strip()) >= 2]
+            usable = [b for b in names
+                      if not any(abs((x.x + x.width / 2) - (b.x + b.width / 2)) < self.width * 0.04
+                                 and x.y < b.y for x in blocked)]
+            best = self.best_pack(usable, want, floor)
+            if best is not None:
+                self.log_info(f'卡包觀測：把「{target.name}」換成「{best.name}」')
+                self.click(best.x + best.width // 2, best.y - int(self.height * 0.1), after_sleep=1)
+                self.click_box(self.wait_for(lambda: self.ocr_roi('pack_obs_ok', TEXT['confirm']),
+                                             time_out=5, what='卡包觀測的「确认」'), after_sleep=2.5)
+                return True
+            self.scroll_relative(0.68, 0.55, -5)
+            self.sleep(1)
+        self.log_warning('卡包觀測裡也沒有想要的卡包，取消')
+        cancel = self.ocr_roi('center', ['取消', 'Cancel'])
+        if cancel:
+            self.click_box(cancel, after_sleep=1.5)
+        return False

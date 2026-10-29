@@ -218,6 +218,41 @@ def parse_stylized_int(text: str) -> int | None:
     return parse_int((text or '').translate(_DIGIT_LOOKALIKE))
 
 
+try:  # ok-script 已經裝了 opencc，用來把繁體設定轉成簡體再比對
+    import opencc as _opencc
+    _T2S = _opencc.OpenCC('t2s')
+except Exception:  # noqa: BLE001
+    _T2S = None
+
+
+def normalize_name(text: str) -> str:
+    """名稱比對用：去掉空白和標點、繁轉簡。"""
+    text = re.sub(r'[\s·・\-—_:：,，。.!！?？]', '', text or '')
+    return _T2S.convert(text) if _T2S else text
+
+
+def parse_pack_rule(line: str):
+    """「无法去爱」或「1:无法去爱」-> (樓層或 None, 名稱)。"""
+    line = (line or '').strip()
+    found = re.match(r'^(\d+)\s*[:：]\s*(.+)$', line)
+    if found:
+        return int(found.group(1)), normalize_name(found.group(2))
+    return None, normalize_name(line)
+
+
+def rule_matches(rules, floor, name) -> int | None:
+    """name 符合第幾條規則 (越小越優先)，都不符合回傳 None。"""
+    target = normalize_name(name)
+    if not target:
+        return None
+    for i, (rule_floor, rule_name) in enumerate(rules):
+        if rule_floor is not None and rule_floor != floor:
+            continue
+        if rule_name and (rule_name in target or target in rule_name):
+            return i
+    return None
+
+
 def keywords_regex(keywords) -> re.Pattern:
     """關鍵字清單 -> 不分大小寫、包含即可的 regex，給 ok-script 的 ocr(match=...) 用。"""
     if isinstance(keywords, str):

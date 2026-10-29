@@ -131,6 +131,19 @@ class TierBandTest(unittest.TestCase):
         self.assertEqual([], vision.find_tier_bands(frame))
 
 
+class PackRuleTest(unittest.TestCase):
+    def test_parse(self):
+        self.assertEqual((None, '无法去爱'), vision.parse_pack_rule('无法去爱'))
+        self.assertEqual((2, '自动工厂'), vision.parse_pack_rule('2: 自动工厂'))
+
+    def test_match_priority_and_floor(self):
+        rules = [vision.parse_pack_rule(r) for r in ['2:自动工厂', '无法去爱', '当碎之物']]
+        self.assertEqual(1, vision.rule_matches(rules, 1, '无法去爱'))
+        self.assertIsNone(vision.rule_matches(rules, 1, '自动工厂'))   # 只限第 2 層
+        self.assertEqual(0, vision.rule_matches(rules, 2, '自动工厂'))
+        self.assertIsNone(vision.rule_matches(rules, 1, '被遗忘者们'))
+
+
 class KeywordsRegexTest(unittest.TestCase):
     def test_contains_and_ignores_case(self):
         pattern = vision.keywords_regex(['To Battle', '出击'])

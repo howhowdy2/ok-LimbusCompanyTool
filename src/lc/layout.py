@@ -80,6 +80,13 @@ ROI = {
     'observe_reject': (0.67, 0.765, 0.77, 0.83),   # 「拒绝饰品」
     # 鏡像迷宮：主題卡包
     'pack_title': (0.38, 0.11, 0.62, 0.20),        # 「选择1层主题卡包」
+    'pack_names': (0.08, 0.58, 0.92, 0.68),        # 五個卡包下方的名稱
+    'pack_mode': (0.69, 0.03, 0.79, 0.10),         # 右上「HARD」(普通模式時不是 HARD)
+    'pack_refresh': (0.80, 0.03, 0.91, 0.10),      # 「刷新 3/3」
+    'pack_observe_btn': (0.10, 0.03, 0.21, 0.10),  # 左上「主题卡包观测」
+    'pack_obs_title': (0.20, 0.13, 0.45, 0.22),    # 「观测第1阶层主题卡包」
+    'pack_obs_list': (0.44, 0.25, 0.93, 0.83),     # 觀測視窗右邊的卡包清單
+    'pack_obs_ok': (0.53, 0.76, 0.71, 0.85),       # 觀測視窗「确认」
     # 戰鬥中右下角的「胜率 / 伤害」按鈕 (行動槽變多時會往右移，範圍抓寬一點)
     'battle_hud': (0.72, 0.71, 0.90, 0.85),
     # 結算畫面 (战斗胜利)
@@ -118,6 +125,15 @@ OBSERVE_COL_DX = 0.065           # 每欄間距
 OBSERVE_ROW_DY0 = 0.086          # 等級分隔條中心 → 第 1 列饰品中心
 OBSERVE_ROW_DY = 0.110           # 每列間距
 OBSERVE_VISIBLE_BOTTOM = 0.80    # 饰品中心超過這裡就要往下捲
+
+
+# 主題卡包：卡包卡片中心 x 用名稱位置；選擇 = 從卡片往下拖
+PACK_DRAG_FROM_Y = 0.45
+PACK_DRAG_TO_Y = 0.92
+PACK_OBS_ICON_DX = 0.045         # 觀測後卡包右上角的 ↻ 在名稱中心右邊
+PACK_OBS_ICON_Y = 0.305
+PACK_MODE_ARROW = (0.666, 0.064) # 難度切換箭頭
+PACK_OBSERVE_BTN = (0.163, 0.064)
 
 
 # 「连续进行」下拉面板
@@ -165,6 +181,10 @@ TEXT = {
     'reject': ['Refuse', '拒绝'],
     'observe_title': ['Observation', '观测'],
     'pack_title': ['Theme Pack', '主题卡包'],
+    'pack_obs_title': ['观测第', 'Observe'],
+    'unavailable': ['无法选择', 'Unavailable'],
+    'hard': ['HARD'],
+    'refresh': ['刷新', 'Refresh'],
     'enter': ['Enter', '进入'],
     'victory': ['Victory', '胜利'],
     'defeat': ['Defeat', '失败'],
