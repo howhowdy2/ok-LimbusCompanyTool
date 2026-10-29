@@ -115,9 +115,3 @@ class LimbusBaseTask(BaseTask):
         if not self.is_home():
             self.screenshot('fail_go_home')
             raise TaskFailed('回不到主畫面')
-
-    def read_enkephalin(self) -> tuple[int, int] | None:
-        """在換體面板打開時，讀出「目前/上限」。"""
-        boxes = self.ocr_roi('enk_count')
-        text = ''.join(box.name for box in boxes)
-        return vision.parse_enkephalin(text)
