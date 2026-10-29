@@ -71,7 +71,7 @@ class MirrorDungeonTask(MirrorShopMixin, MirrorRewardMixin, LimbusBaseTask):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.name = '鏡像迷宮'
-        self.description = '進入鏡像迷宮：編隊 → 恩惠 → 饰品 → 卡包 → 走第一個節點 (之後尚未完成)'
+        self.description = '鏡像迷宮：編隊 → 恩惠 → 饰品 → 卡包 → 地圖 (事件 / 戰鬥 / 商店)。已經在迷宮裡就直接接著走'
         self.default_config.update({
             'Min Star Reward': 0,
             'If In Progress': IN_PROGRESS_CONTINUE,
@@ -159,6 +159,12 @@ class MirrorDungeonTask(MirrorShopMixin, MirrorRewardMixin, LimbusBaseTask):
             self.config_description.update(descriptions)
 
     def run(self):
+        # 先看是不是已經在迷宮裡 (地圖、卡包選擇、商店、事件、戰鬥…)，是的話直接接著走
+        inside = self.dungeon_screen()
+        if inside:
+            self.log_info(f'已經在鏡像迷宮裡 ({inside})，直接繼續')
+            self.explore()
+            return
         self.open_mirror_dungeon()
         if self.enter_dungeon() == 'continued':
             self.log_info('繼續上次的鏡像迷宮')
@@ -172,34 +178,47 @@ class MirrorDungeonTask(MirrorShopMixin, MirrorRewardMixin, LimbusBaseTask):
         self.choose_pack()
         self.explore()
 
-    def explore(self, max_nodes: int = 80):
-        """地圖 → 選節點 → 进入 → 事件 / 戰鬥 → 回到地圖 (每次都重新縮小、重新判斷)。
-        到了下一層會先選主題卡包。"""
-        for _ in range(max_nodes):
-            screen = self.wait_screen(time_out=40)
+    def dungeon_screen(self):
+        """目前是不是迷宮裡的畫面，是的話回傳名稱，不是回傳 None (只看，不點任何東西)。"""
+        checks = [
+            ('地圖', self.on_map_screen),
+            ('主題卡包選擇', lambda: self.ocr_roi('pack_title', TEXT['pack_title'])),
+            ('商店', self.on_shop_screen),
+            ('事件', lambda: self.on_event_screen() or self.ocr_roi('judge_title', TEXT['judge_title'])),
+            ('戰鬥', self.in_input_phase),
+            ('遭遇戰獎勵卡', lambda: self.ocr_roi('reward_card_title', TEXT['reward_card_title'])),
+            ('選饰品獎勵', lambda: self.ocr_roi('gift_reward_marker', TEXT['gift_reward_marker'])),
+        ]
+        for _ in range(2):   # 畫面可能正在切換，多看一次
+            self.next_frame()
+            for name, check in checks:
+                if check():
+                    return name
+            self.sleep(1)
+        return None
+
+    def explore(self, max_steps: int = 200):
+        """地圖 → 選節點 → 进入 → 事件 / 戰鬥 / 商店 → 回到地圖 (每次都重新縮小、重新判斷)。
+        到了下一層會先選主題卡包。從迷宮裡任何認得的畫面開始都可以。"""
+        for _ in range(max_steps):
+            screen = self.wait_screen(time_out=40, include_battle=True)
             if screen == 'pack':
                 self.choose_pack()
-                continue
-            if screen != 'map':
-                self.screenshot('fail_unknown_screen')
-                raise TaskFailed('不知道現在是什麼畫面 (不是地圖也不是卡包選擇)，請把截圖給我')
-            kind = self.choose_node()
-            self.enter_node()
-            after = self.wait_screen(time_out=20, include_battle=True)
-            if after == 'event':
+            elif screen == 'event':
                 self.handle_event()
-            elif after == 'team':
-                if self.fight_node() == 'defeat':
+            elif screen in ('team', 'battle'):
+                if self.fight_node(start=(screen == 'team')) == 'defeat':
                     self.log_info('戰鬥失敗，停止', notify=True)
                     return
-            elif after == 'shop':
+            elif screen == 'shop':
                 self.handle_shop()
-            elif after in ('map', 'pack'):
-                continue
+            elif screen == 'map':
+                self.choose_node()
+                self.enter_node()
             else:
-                self.screenshot('fail_after_node')
-                raise TaskFailed(f'進入節點 ({kind}) 之後的畫面還沒做，請把截圖給我')
-        self.log_info(f'已走過 {max_nodes} 個節點，先停下來', notify=True)
+                self.screenshot('fail_unknown_screen')
+                raise TaskFailed('不知道現在是什麼畫面 (不是地圖、卡包、商店、事件或戰鬥)，請把截圖給我')
+        self.log_info(f'已經處理了 {max_steps} 個畫面，先停下來', notify=True)
 
     def wait_screen(self, time_out: float, include_battle: bool = False):
         """等到認得的畫面：'map' 地圖、'pack' 主題卡包、'event' 事件、'team' 戰鬥編隊。途中的獲得饰品都按确认。"""
@@ -216,6 +235,8 @@ class MirrorDungeonTask(MirrorShopMixin, MirrorRewardMixin, LimbusBaseTask):
                 return 'event'
             if include_battle and self.on_battle_team_screen():
                 return 'team'
+            if include_battle and self.in_input_phase():
+                return 'battle'
             if self.on_shop_screen():
                 return 'shop'
             confirm = self.ocr_roi('lower_half', TEXT['confirm'])
@@ -787,17 +808,27 @@ class MirrorDungeonTask(MirrorShopMixin, MirrorRewardMixin, LimbusBaseTask):
         return False
 
     def confirm_pack_replace(self) -> bool:
-        """「主题卡包"A"将被"B"替换。」(下面是星芒花費) -> 确认。"""
-        if not self.wait_until(lambda: self.ocr_roi('pack_replace', TEXT['pack_replace']), time_out=5):
+        """「主题卡包"A"将被"B"替换。」(下面是星芒花費) -> 确认。
+
+        標題文字太長時「替换」會被拆成兩行，所以也認「将被」；就算字沒讀到，
+        彈窗位置有「确认」也照按，不然後面的卡包選擇會被擋住。
+        """
+        def popup():
+            return (self.ocr_roi('pack_replace', TEXT['pack_replace'])
+                    or self.ocr_roi('md_popup_btn', TEXT['confirm']))
+        if not self.wait_until(popup, time_out=6):
             self.log_warning('沒有看到「…将被…替换」確認視窗')
             return not self.ocr_roi('pack_obs_title', TEXT['pack_obs_title'])
-        for _ in range(3):
-            ok = self.wait_for(lambda: self.ocr_roi('md_popup_btn', TEXT['confirm']),
-                               time_out=5, what='替換確認的「确认」')
-            self.click_box(ok, after_sleep=2.5)
+        for _ in range(4):
             self.next_frame()
-            if not self.ocr_roi('pack_replace', TEXT['pack_replace']):
-                break
+            ok = self.ocr_roi('md_popup_btn', TEXT['confirm'])
+            if not ok:
+                if not self.ocr_roi('pack_replace', TEXT['pack_replace']):
+                    break
+                self.sleep(1)
+                continue
+            self.log_info('確認替換主題卡包')
+            self.click_box(ok, after_sleep=2.5)
         self.wait_for(lambda: self.ocr_roi('pack_title', TEXT['pack_title'])
                       and not self.ocr_roi('pack_obs_title', TEXT['pack_obs_title']),
                       time_out=10, what='替換後回到卡包選擇畫面')
@@ -996,7 +1027,7 @@ class MirrorDungeonTask(MirrorShopMixin, MirrorRewardMixin, LimbusBaseTask):
         raise TaskFailed('事件處理超時 (可能是判定或戰鬥畫面，還沒做)，請把截圖給我')
 
     def choose_judge_sinner(self):
-        """判定：選頭上機率最高的罪人 (极高 > 高 > 普通 > 低 > 极低)，再按右下「继续」。"""
+        """判定：選頭上機率最高的罪人 (极高 > 高 > 普通 > 低 > 极低)，再按右下「进行判定」。"""
         best, best_level, best_text = None, -1, ''
         for b in self.ocr_roi('judge_levels'):
             level = vision.judge_level(b.name)
@@ -1010,16 +1041,16 @@ class MirrorDungeonTask(MirrorShopMixin, MirrorRewardMixin, LimbusBaseTask):
             self.log_warning('讀不到罪人的判定機率，選第一個')
             best = 0
         self.log_info(f'判定：選第 {best + 1} 個罪人 ({best_text or "?"})')
-        self.info_set('判定', f'第 {best + 1} 個罪人 {best_text}')
+        self.info_set('判定罪人', f'第 {best + 1} 個 {best_text}')
         self.click_relative(JUDGE_SINNER_X0 + JUDGE_SINNER_DX * best, JUDGE_SINNER_Y, after_sleep=1.5)
-        # 選了罪人後，右下角的 SKIP 會變成「继续」，按它開始判定
-        button = self.wait_until(lambda: self.ocr_roi('event_skip', TEXT['continue']), time_out=4)
+        # 選了罪人後，右下角的 SKIP 會變成「进行判定」(有時是「继续」)，按它開始判定
+        button = self.wait_until(lambda: self.ocr_roi('event_skip', TEXT['judge_go']), time_out=4)
         if button:
             self.click_box(button, after_sleep=2.5)
         else:
-            self.log_warning('沒看到「继续」，直接點右下角')
+            self.log_warning('沒看到「进行判定」，直接點右下角')
             self.click_relative(*EVENT_SKIP_BTN, after_sleep=2.5)
-        self.info_incr('判定')
+        self.info_incr('判定次數')
 
     # ---------- 戰鬥節點 (跟經驗本「進入戰鬥」一樣) ----------
 
@@ -1031,15 +1062,18 @@ class MirrorDungeonTask(MirrorShopMixin, MirrorRewardMixin, LimbusBaseTask):
     def in_input_phase(self):
         return bool(self.ocr_roi('battle_hud', TEXT['win_rate']))
 
-    def fight_node(self):
+    def fight_node(self, start: bool = True):
         """編隊畫面 → 开始战斗 → 出指令階段按 P + Enter → 結算按确认 → 回到地圖。
-        回傳 'victory' / 'defeat'。"""
-        self.log_info('戰鬥節點：開始戰鬥')
-        button = self.ocr_roi('to_battle', TEXT['to_battle'])
-        if button:
-            self.click_box(button, after_sleep=3)
+        start=False：已經在戰鬥中 (中途開始任務)，直接接著打。回傳 'victory' / 'defeat'。"""
+        if start:
+            self.log_info('戰鬥節點：開始戰鬥')
+            button = self.ocr_roi('to_battle', TEXT['to_battle'])
+            if button:
+                self.click_box(button, after_sleep=3)
+            else:
+                self.click_pos('to_battle', after_sleep=3)
         else:
-            self.click_pos('to_battle', after_sleep=3)
+            self.log_info('戰鬥中，接著打')
         timeout = self.config.get('Battle Timeout (s)', 400)
         start, result = time.time(), None
         while time.time() - start < timeout:

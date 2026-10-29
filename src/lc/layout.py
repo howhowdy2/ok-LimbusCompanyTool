@@ -276,9 +276,10 @@ TEXT = {
     'hard': ['HARD'],
     'refresh': ['刷新', 'Refresh'],
     'enter': ['Enter', '进入'],
-    'pack_replace': ['替换', 'replace'],
+    'pack_replace': ['替换', '将被', 'replace'],   # 字太長時「替 / 换」會被拆成兩行
     'shop_title': ['商店', 'Shop'],
     'judge_title': ['进行判定', '选择一位罪人'],
+    'judge_go': ['进行判定', '判定', '继续', 'Continue'],
     'reward_card_title': ['遭遇战奖励', '选择遭遇战'],
     'gift_reward_marker': ['追加的苦难', '苦难'],
     'leave': ['离开', 'Leave'],
