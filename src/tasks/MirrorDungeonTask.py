@@ -81,6 +81,7 @@ class MirrorDungeonTask(LimbusBaseTask):
             'Pack Use Observe': False,
             'Node Priority': list(NODE_DEFAULT),
             'Event Priority': list(EVENT_DEFAULT),
+            'Battle Timeout (s)': 400,
         })
         self.config_type['Pack Difficulty'] = {'type': 'drop_down',
                                                'options': [MODE_KEEP, MODE_HARD, MODE_NORMAL]}
@@ -105,6 +106,7 @@ class MirrorDungeonTask(LimbusBaseTask):
             'Event Priority': '事件選項的優先順序，一行一個，看選項下面的小字分類：'
                               + '、'.join(vision.EVENT_KINDS)
                               + '。「其他」= 沒有小字或沒見過的 (會存到 screenshots/event_options 給你看)',
+            'Battle Timeout (s)': '迷宮裡單場戰鬥最多等幾秒',
         })
         for slot in range(1, OBSERVE_SLOTS + 1):
             type_key, tier_key, index_key = observe_keys(slot)
@@ -140,14 +142,15 @@ class MirrorDungeonTask(LimbusBaseTask):
         # 設定畫面照流程順序顯示：恩惠 → 饰品观测 → 卡包 (各層想要的 → 避開 → 刷新/觀測)
         pack_keys = (['Pack Difficulty'] + [pack_key(f) for f in pack_data.FLOORS]
                      + ['Pack Avoid', 'Pack Use Refresh', 'Pack Use Observe', 'Node Priority',
-                        'Event Priority'])
+                        'Event Priority', 'Battle Timeout (s)'])
         for key in pack_keys:
             self.default_config[key] = self.default_config.pop(key)
 
     def run(self):
         self.open_mirror_dungeon()
         if self.enter_dungeon() == 'continued':
-            self.log_info('繼續上次的鏡像迷宮 (迷宮內流程尚未實作，請手動接手)', notify=True)
+            self.log_info('繼續上次的鏡像迷宮')
+            self.explore()
             return
         self.choose_team()
         self.confirm_team()
@@ -155,12 +158,56 @@ class MirrorDungeonTask(LimbusBaseTask):
         self.choose_start_gifts()
         self.observe_gifts()
         self.choose_pack()
-        kind = self.choose_node()
-        self.enter_node()
-        if self.handle_event():
-            self.log_info('事件處理完了，之後的流程尚未實作，請手動接手', notify=True)
-        else:
-            self.log_info(f'已進入節點 ({kind})，之後的流程尚未實作，請手動接手', notify=True)
+        self.explore()
+
+    def explore(self, max_nodes: int = 80):
+        """地圖 → 選節點 → 进入 → 事件 / 戰鬥 → 回到地圖 (每次都重新縮小、重新判斷)。
+        到了下一層會先選主題卡包。"""
+        for _ in range(max_nodes):
+            screen = self.wait_screen(time_out=40)
+            if screen == 'pack':
+                self.choose_pack()
+                continue
+            if screen != 'map':
+                self.screenshot('fail_unknown_screen')
+                raise TaskFailed('不知道現在是什麼畫面 (不是地圖也不是卡包選擇)，請把截圖給我')
+            kind = self.choose_node()
+            self.enter_node()
+            after = self.wait_screen(time_out=20, include_battle=True)
+            if after == 'event':
+                self.handle_event()
+            elif after == 'team':
+                if self.fight_node() == 'defeat':
+                    self.log_info('戰鬥失敗，停止', notify=True)
+                    return
+            elif after in ('map', 'pack'):
+                continue
+            else:
+                self.screenshot('fail_after_node')
+                raise TaskFailed(f'進入節點 ({kind}) 之後的畫面還沒做，請把截圖給我')
+        self.log_info(f'已走過 {max_nodes} 個節點，先停下來', notify=True)
+
+    def wait_screen(self, time_out: float, include_battle: bool = False):
+        """等到認得的畫面：'map' 地圖、'pack' 主題卡包、'event' 事件、'team' 戰鬥編隊。途中的獲得饰品都按确认。"""
+        start = time.time()
+        while time.time() - start < time_out:
+            self.next_frame()
+            if self.handle_gift_popup():
+                continue
+            if self.on_map_screen():
+                return 'map'
+            if self.ocr_roi('pack_title', TEXT['pack_title']):
+                return 'pack'
+            if self.on_event_screen():
+                return 'event'
+            if include_battle and self.on_battle_team_screen():
+                return 'team'
+            confirm = self.ocr_roi('lower_half', TEXT['confirm'])
+            if confirm:
+                self.click_box(confirm, after_sleep=2)
+                continue
+            self.sleep(1)
+        return None
 
     # ---------- 進入 ----------
 
@@ -862,9 +909,11 @@ class MirrorDungeonTask(LimbusBaseTask):
         start = time.time()
         while time.time() - start < time_out:
             self.next_frame()
-            if self.on_map_screen():
-                self.log_info('事件結束，回到地圖')
+            if self.on_map_screen() or self.ocr_roi('pack_title', TEXT['pack_title']):
+                self.log_info('事件結束')
                 return True
+            if self.on_battle_team_screen():   # 選項進了戰鬥
+                return self.fight_node() != 'defeat'
             if self.handle_gift_popup():
                 continue
             if self.ocr_roi('event_options_title', TEXT['event_options_title']):
@@ -876,3 +925,53 @@ class MirrorDungeonTask(LimbusBaseTask):
             self.click_relative(*EVENT_SKIP_BTN, after_sleep=1)
         self.screenshot('fail_event')
         raise TaskFailed('事件處理超時 (可能是判定或戰鬥畫面，還沒做)，請把截圖給我')
+
+    # ---------- 戰鬥節點 (跟經驗本「進入戰鬥」一樣) ----------
+
+    def on_battle_team_screen(self):
+        if self.has_template('team_screen') and self.find_template('team_screen'):
+            return True
+        return self.ocr_roi('to_battle', TEXT['to_battle'])
+
+    def in_input_phase(self):
+        return bool(self.ocr_roi('battle_hud', TEXT['win_rate']))
+
+    def fight_node(self):
+        """編隊畫面 → 开始战斗 → 出指令階段按 P + Enter → 結算按确认 → 回到地圖。
+        回傳 'victory' / 'defeat'。"""
+        self.log_info('戰鬥節點：開始戰鬥')
+        button = self.ocr_roi('to_battle', TEXT['to_battle'])
+        if button:
+            self.click_box(button, after_sleep=3)
+        else:
+            self.click_pos('to_battle', after_sleep=3)
+        timeout = self.config.get('Battle Timeout (s)', 400)
+        start, result = time.time(), None
+        while time.time() - start < timeout:
+            self.next_frame()
+            if self.on_map_screen() or self.ocr_roi('pack_title', TEXT['pack_title']):
+                self.log_info(f'戰鬥結束 ({result or "?"})，用時 {int(time.time() - start)} 秒')
+                return result or 'victory'
+            got = self.handle_result_screen()
+            if got:
+                result = got
+                if got == 'defeat':
+                    return got
+                continue
+            if self.handle_gift_popup():
+                continue
+            if self.in_input_phase():
+                self.send_key('p', after_sleep=0.5)
+                self.send_key('enter', after_sleep=3)
+                self.info_incr('回合')
+                continue
+            if self.on_battle_team_screen():   # 開戰沒反應，再按一次
+                self.click_pos('to_battle', after_sleep=3)
+                continue
+            confirm = self.ocr_roi('lower_half', TEXT['confirm'])
+            if confirm:
+                self.click_box(confirm, after_sleep=2)
+                continue
+            self.sleep(1)
+        self.screenshot('fail_md_battle')
+        raise TaskFailed(f'戰鬥超過 {timeout} 秒沒回到地圖 (可能是戰後獎勵畫面還沒做)，請把截圖給我')
