@@ -397,3 +397,23 @@ def group_by_rows(items, key_y, gap: float):
         else:
             groups.append([item])
     return groups
+
+
+def find_train(frame: np.ndarray, area=MAP_AREA) -> tuple[int, int] | None:
+    """地圖上目前位置的紅色火車，回傳火車身體的中心 (像素)；找不到回傳 None。"""
+    image = frame[:, :, :3].astype(np.int16)
+    b, g, r = image[:, :, 0], image[:, :, 1], image[:, :, 2]
+    mask = ((r > 110) & (r - g > 70) & (r - b > 60) & (g < 80)).astype(np.uint8)
+    height, width = mask.shape
+    left, top, right, bottom = rel_to_px(area, width, height)
+    region = np.zeros_like(mask)
+    region[top:bottom, left:right] = mask[top:bottom, left:right]
+    region = cv2.morphologyEx(region, cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8))
+    count, _, stats, centroids = cv2.connectedComponentsWithStats(region)
+    if count <= 1:
+        return None
+    best = 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))
+    if stats[best, cv2.CC_STAT_AREA] < width * height * 0.00008:
+        return None
+    cx, cy = centroids[best]
+    return int(cx), int(cy)

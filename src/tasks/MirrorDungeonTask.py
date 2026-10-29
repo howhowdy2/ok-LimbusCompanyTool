@@ -832,8 +832,15 @@ class MirrorDungeonTask(LimbusBaseTask):
         self.zoom_out_map()
         nodes = self.read_map()
         if not nodes:
-            self.screenshot('fail_map_nodes')
-            raise TaskFailed('樓層地圖上找不到可以走的節點 (亮藍色的路線)')
+            # 沒有亮起的路 = 目前這個節點還沒打完，點自己所在的位置 (紅色火車) 再進去
+            train = vision.find_train(self.frame)
+            if train is None:
+                self.screenshot('fail_map_nodes')
+                raise TaskFailed('樓層地圖上找不到可以走的節點，也找不到目前位置 (紅色火車)')
+            self.log_info('沒有亮起的路線，目前節點還沒通過，點目前位置')
+            self.info_set('選擇節點', '目前位置')
+            self.click(*train, after_sleep=2)
+            return '目前位置'
         boxes = [Box(n.x - n.size // 2, n.y - n.size // 2, n.size, n.size, name=kind) for n, kind in nodes]
         self.draw_boxes('map_node', boxes, 'green')
         self.info_set('可走節點', '、'.join(kind for _, kind in nodes))

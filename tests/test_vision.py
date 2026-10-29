@@ -188,6 +188,14 @@ class MapNodeTest(unittest.TestCase):
             self.assertAlmostEqual(x, node.x, delta=8)
             self.assertAlmostEqual(y, node.y, delta=8)
 
+    def test_find_train(self):
+        frame = np.full((1440, 2560, 3), (40, 35, 20), np.uint8)
+        cv2.rectangle(frame, (870, 580), (920, 650), (20, 20, 170), -1)   # 紅色火車
+        cv2.rectangle(frame, (300, 1300), (400, 1400), (20, 20, 170), -1)  # 下方角色列不算
+        x, y = vision.find_train(frame)
+        self.assertAlmostEqual(895, x, delta=3)
+        self.assertAlmostEqual(615, y, delta=3)
+
     def test_nothing_lit(self):
         frame = np.full((1080, 1920, 3), (40, 35, 20), np.uint8)
         self.assertEqual([], vision.find_reachable_nodes(frame))
