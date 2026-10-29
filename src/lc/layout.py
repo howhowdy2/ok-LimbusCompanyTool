@@ -87,6 +87,8 @@ ROI = {
     'pack_obs_title': (0.20, 0.13, 0.45, 0.22),    # 「观测第1阶层主题卡包」
     'pack_obs_list': (0.44, 0.25, 0.93, 0.83),     # 觀測視窗右邊的卡包清單
     'pack_obs_ok': (0.53, 0.76, 0.71, 0.85),       # 觀測視窗「确认」
+    'pack_replace': (0.33, 0.33, 0.67, 0.42),      # 「主题卡包"A"将被"B"替换。」(確認按鈕用 md_popup_btn)
+    'map_title': (0.02, 0.11, 0.22, 0.18),         # 樓層地圖左上「正在探索第1层」
     # 戰鬥中右下角的「胜率 / 伤害」按鈕 (行動槽變多時會往右移，範圍抓寬一點)
     'battle_hud': (0.72, 0.71, 0.90, 0.85),
     # 結算畫面 (战斗胜利)
@@ -147,6 +149,23 @@ class REPEAT:
     plus_dx = -0.018          # 綠色 + 在 ▲ 左邊多少
 
 
+# 鏡像迷宮樓層地圖
+MAP_CENTER = (0.50, 0.50)   # 在這裡滾滾輪縮小地圖
+MAP_ZOOM_SCROLLS = 3        # 縮小時滾幾輪 (每輪 -10 格，縮到最小為止)
+# 節點類型：設定裡的名稱 -> assets/lc 裡的模板檔名 (map_xxx.png，存的是節點中間的圖示)
+NODE_TYPES = {
+    '事件': 'map_event',
+    '戰鬥': 'map_battle',
+    '異想體': 'map_abno',
+    '精英戰鬥': 'map_elite',
+    '商店': 'map_shop',
+    '休息': 'map_rest',
+    '頭目': 'map_boss',
+}
+NODE_UNKNOWN = '未知'
+NODE_MATCH_THRESHOLD = 0.6
+
+
 # OCR 關鍵字：英文版和 LLC 簡中漢化都列上去 (繁體會被自動轉成簡體)
 TEXT = {
     'luxcavation': ['Luxcavation', '采光'],
@@ -186,6 +205,8 @@ TEXT = {
     'hard': ['HARD'],
     'refresh': ['刷新', 'Refresh'],
     'enter': ['Enter', '进入'],
+    'pack_replace': ['替换', 'replace'],
+    'map_title': ['正在探索', 'Exploring'],
     'victory': ['Victory', '胜利'],
     'defeat': ['Defeat', '失败'],
 }

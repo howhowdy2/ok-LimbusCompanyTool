@@ -269,3 +269,101 @@ def keywords_regex(keywords) -> re.Pattern:
     if not parts:
         return re.compile(r'(?!)')  # 永遠不會符合
     return re.compile('|'.join(parts), re.IGNORECASE)
+
+
+# ---------- 鏡像迷宮樓層地圖 ----------
+
+MAP_AREA = (0.15, 0.12, 0.93, 0.86)   # 扣掉上方關鍵字列、右邊按鈕、下方角色列
+NODE_ICON_SIZE = 48                    # 節點圖示正規化後的邊長 (模板也存這個大小)
+NODE_ICON_RATIO = 0.45                 # 圖示取節點外框高度的多少 (中間那一塊)
+NODE_ICON_DY = -0.10                   # 外框下面有立體的邊，圖示中心比外框中心高一點 (外框高度的比例)
+
+
+@dataclass(frozen=True)
+class MapNode:
+    x: int        # 節點中心 (像素)
+    y: int
+    size: int     # 外框高度 (像素)
+
+
+def lit_mask(frame: np.ndarray, area=MAP_AREA) -> np.ndarray:
+    """地圖上「亮藍色」的部分：目前所在的節點、可以走的路線和可以走的節點。走不到的都是暗的。"""
+    image = frame[:, :, :3].astype(np.int16)
+    b, g, r = image[:, :, 0], image[:, :, 1], image[:, :, 2]
+    mask = ((b > 150) & (g > 120) & (b - r > 90)).astype(np.uint8)
+    height, width = mask.shape
+    left, top, right, bottom = rel_to_px(area, width, height)
+    out = np.zeros_like(mask)
+    out[top:bottom, left:right] = mask[top:bottom, left:right]
+    return out
+
+
+def find_reachable_nodes(frame: np.ndarray, area=MAP_AREA, strip: float = 0.02,
+                         min_span: float = 0.06, gap: float = 0.03) -> list[MapNode]:
+    """找出下一步可以走的節點 (由上到下)。
+
+    亮藍色的東西是「目前節點 → 路線 → 可走的節點」，可走的節點一定在最右邊那一欄：
+    取最右邊一條窄帶裡的亮點，依 y 分群，每一群就是一個節點外框的右半邊。
+    """
+    mask = lit_mask(frame, area)
+    height, width = mask.shape
+    min_pixels = max(12, int(width * height * 0.00001))
+    # 去掉零星的亮點 (背景花紋、特效)，不然最右邊會被它們佔走
+    count, labels, stats, _ = cv2.connectedComponentsWithStats(mask, connectivity=8)
+    keep = np.zeros(count, bool)
+    keep[1:] = stats[1:, cv2.CC_STAT_AREA] >= min_pixels
+    mask = keep[labels].astype(np.uint8)
+    ys, xs = np.nonzero(mask)
+    if len(xs) == 0 or (xs.max() - xs.min()) / width < min_span:
+        return []   # 只剩目前節點自己亮著 (沒有路可走)
+    right = xs.max()
+    sel = xs >= right - strip * width
+    pts = sorted(zip(ys[sel], xs[sel]))
+    nodes, group = [], []
+
+    def flush():
+        if len(group) >= min_pixels:
+            y0, y1 = group[0][0], group[-1][0]
+            size = y1 - y0 + 1
+            gx = max(x for _, x in group)
+            nodes.append(MapNode(int(gx - size / 2), int((y0 + y1) / 2), int(size)))
+
+    for y, x in pts:
+        if group and y - group[-1][0] > gap * height:
+            flush()
+            group = []
+        group.append((y, x))
+    flush()
+    nodes = [n for n in nodes if n.size >= height * 0.02]
+    if not nodes:
+        return []
+    # 外框常被劍、線擋住一部分，量到的高度會偏小；同一張圖的節點一樣大，用最大的那個
+    size = max(n.size for n in nodes)
+    return [MapNode(int(n.x + n.size / 2 - size / 2), n.y, size) for n in nodes]
+
+
+def node_icon(frame: np.ndarray, node: MapNode, ratio: float = NODE_ICON_RATIO,
+              size: int = NODE_ICON_SIZE) -> np.ndarray:
+    """節點中間的圖示 (? / 劍 / 異想體…)，灰階並縮放成固定大小，跟縮放程度無關。"""
+    half = max(4, int(node.size * ratio / 2))
+    cx, cy = node.x, int(node.y + node.size * NODE_ICON_DY)
+    height, width = frame.shape[:2]
+    x0, y0 = max(0, cx - half), max(0, cy - half)
+    crop = frame[y0:min(height, cy + half), x0:min(width, cx + half)]
+    return cv2.resize(to_gray(crop), (size, size), interpolation=cv2.INTER_AREA)
+
+
+def classify_node(icon: np.ndarray, templates: dict) -> tuple[str | None, float]:
+    """icon 跟每個模板比對 (容許上下左右偏一點)，回傳 (最像的類型, 分數)。"""
+    best, best_score = None, -1.0
+    margin = max(2, icon.shape[0] // 4)
+    padded = cv2.copyMakeBorder(icon, margin, margin, margin, margin, cv2.BORDER_REPLICATE)
+    for name, tpl in templates.items():
+        tpl = to_gray(tpl)
+        if tpl.shape[:2] != icon.shape[:2]:
+            tpl = cv2.resize(tpl, icon.shape[::-1], interpolation=cv2.INTER_AREA)
+        response = np.nan_to_num(cv2.matchTemplate(padded, tpl, cv2.TM_CCOEFF_NORMED), nan=-1.0)
+        score = float(response.max())
+        if score > best_score:
+            best, best_score = name, score
+    return best, best_score

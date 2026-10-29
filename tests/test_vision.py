@@ -164,6 +164,41 @@ class PackDataTest(unittest.TestCase):
         self.assertIn('心意相悖', packs.packs_on_floor(5, hard=True))
 
 
+class MapNodeTest(unittest.TestCase):
+    CYAN = (255, 230, 90)   # BGR
+
+    def hexagon(self, frame, cx, cy, r):
+        pts = np.array([(cx + r * np.cos(a), cy + r * np.sin(a))
+                        for a in np.linspace(0, 2 * np.pi, 7)[:-1]], np.int32)
+        cv2.polylines(frame, [pts], True, self.CYAN, 3)
+
+    def test_reachable_nodes_are_the_rightmost_lit_column(self):
+        frame = np.full((1440, 2560, 3), (40, 35, 20), np.uint8)
+        start = (900, 620)
+        targets = [(1150, 430), (1150, 645), (1150, 860)]
+        self.hexagon(frame, *start, 40)
+        for x, y in targets:
+            cv2.line(frame, start, (x - 40, y), self.CYAN, 6)
+            self.hexagon(frame, x, y, 40)
+        self.hexagon(frame, 1400, 640, 40)            # 走不到的節點是暗的
+        frame[600:680, 1360:1440] //= 3
+        nodes = vision.find_reachable_nodes(frame)
+        self.assertEqual(3, len(nodes))
+        for (x, y), node in zip(targets, nodes):
+            self.assertAlmostEqual(x, node.x, delta=8)
+            self.assertAlmostEqual(y, node.y, delta=8)
+
+    def test_nothing_lit(self):
+        frame = np.full((1080, 1920, 3), (40, 35, 20), np.uint8)
+        self.assertEqual([], vision.find_reachable_nodes(frame))
+
+    def test_classify_with_shipped_templates(self):
+        templates = {name: cv2.imread(f'assets/lc/{name}.png') for name in ('map_event', 'map_battle')}
+        for name, tpl in templates.items():
+            noisy = cv2.add(vision.to_gray(tpl), 10)
+            self.assertEqual(name, vision.classify_node(noisy, templates)[0])
+
+
 class KeywordsRegexTest(unittest.TestCase):
     def test_contains_and_ignores_case(self):
         pattern = vision.keywords_regex(['To Battle', '出击'])

@@ -1,4 +1,8 @@
 import time
+from pathlib import Path
+
+import cv2
+from ok import Box
 
 from src.lc import packs as pack_data
 from src.lc import vision
@@ -8,8 +12,9 @@ from src.lc.layout import (PACK_DRAG_FROM_Y, PACK_DRAG_TO_Y, PACK_MODE_ARROW, PA
                            OBSERVE_TAB_X, OBSERVE_TAB_Y, OBSERVE_TYPES, OBSERVE_VISIBLE_BOTTOM,
                            GIFT_CARD_X, GIFT_CARD_Y, GIFT_KEYWORDS, GIFT_SCROLL_ARROW,
                            GRACE_COL_X, GRACE_NAMES, GRACE_PLUS_DX, GRACE_PLUS_Y,
-                           GRACE_PLUSPLUS_DX, GRACE_ROW_Y, TEXT)
-from src.tasks.LimbusBaseTask import LimbusBaseTask, TaskFailed
+                           GRACE_PLUSPLUS_DX, GRACE_ROW_Y, TEXT,
+                           MAP_CENTER, MAP_ZOOM_SCROLLS, NODE_MATCH_THRESHOLD, NODE_TYPES, NODE_UNKNOWN)
+from src.tasks.LimbusBaseTask import TEMPLATE_DIR, LimbusBaseTask, TaskFailed
 
 IN_PROGRESS_CONTINUE = '繼續探索'
 IN_PROGRESS_ABORT = '終止探索 (放棄獎勵)'
@@ -21,6 +26,8 @@ OBSERVE_OFF = '不選'
 OBSERVE_TIERS = ['III', 'II', 'I']
 OBSERVE_SLOTS = 3
 MODE_KEEP, MODE_HARD, MODE_NORMAL = '不切換', '困难', '普通'
+NODE_DEFAULT = ['事件', '戰鬥', '異想體']
+UNKNOWN_NODE_DIR = Path('screenshots') / 'map_nodes'
 
 
 def pack_key(floor: int) -> str:
@@ -58,7 +65,7 @@ class MirrorDungeonTask(LimbusBaseTask):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.name = '鏡像迷宮'
-        self.description = '進入鏡像迷宮並選好編隊 (迷宮內流程尚未完成)'
+        self.description = '進入鏡像迷宮：編隊 → 恩惠 → 饰品 → 卡包 → 走第一個節點 (之後尚未完成)'
         self.default_config.update({
             'Min Star Reward': 0,
             'If In Progress': IN_PROGRESS_CONTINUE,
@@ -69,6 +76,7 @@ class MirrorDungeonTask(LimbusBaseTask):
             'Pack Avoid': [],
             'Pack Use Refresh': True,
             'Pack Use Observe': False,
+            'Node Priority': list(NODE_DEFAULT),
         })
         self.config_type['Pack Difficulty'] = {'type': 'drop_down',
                                                'options': [MODE_KEEP, MODE_HARD, MODE_NORMAL]}
@@ -87,6 +95,9 @@ class MirrorDungeonTask(LimbusBaseTask):
             'Pack Avoid': '不要的卡包，都沒有想要的卡包時會避開這些，也會優先把它們換掉',
             'Pack Use Refresh': '畫面上沒有想要的卡包時，用右上「刷新」(用完為止)',
             'Pack Use Observe': '刷新用完還是沒有時，用「主题卡包观测」把一個卡包換成想要的 (可能花星芒)',
+            'Node Priority': '樓層地圖上有好幾條路時，優先走哪種節點，一行一個，越上面越優先。'
+                             '可用：' + '、'.join(list(NODE_TYPES) + [NODE_UNKNOWN])
+                             + '。沒列到的排最後，一樣優先時走上面那條',
         })
         for slot in range(1, OBSERVE_SLOTS + 1):
             type_key, tier_key, index_key = observe_keys(slot)
@@ -121,7 +132,7 @@ class MirrorDungeonTask(LimbusBaseTask):
         })
         # 設定畫面照流程順序顯示：恩惠 → 饰品观测 → 卡包 (各層想要的 → 避開 → 刷新/觀測)
         pack_keys = (['Pack Difficulty'] + [pack_key(f) for f in pack_data.FLOORS]
-                     + ['Pack Avoid', 'Pack Use Refresh', 'Pack Use Observe'])
+                     + ['Pack Avoid', 'Pack Use Refresh', 'Pack Use Observe', 'Node Priority'])
         for key in pack_keys:
             self.default_config[key] = self.default_config.pop(key)
 
@@ -136,7 +147,8 @@ class MirrorDungeonTask(LimbusBaseTask):
         self.choose_start_gifts()
         self.observe_gifts()
         self.choose_pack()
-        self.log_info('已選好第 1 層主題卡包 (之後的流程尚未實作，請手動接手)', notify=True)
+        kind = self.choose_node()
+        self.log_info(f'已走向第一個節點 ({kind})，之後的流程尚未實作，請手動接手', notify=True)
 
     # ---------- 進入 ----------
 
@@ -664,8 +676,8 @@ class MirrorDungeonTask(LimbusBaseTask):
                 self.log_info(f'卡包觀測：把「{target.name}」換成「{best.name}」')
                 self.click(best.x + best.width // 2, best.y - int(self.height * 0.1), after_sleep=1)
                 self.click_box(self.wait_for(lambda: self.ocr_roi('pack_obs_ok', TEXT['confirm']),
-                                             time_out=5, what='卡包觀測的「确认」'), after_sleep=2.5)
-                return True
+                                             time_out=5, what='卡包觀測的「确认」'), after_sleep=2)
+                return self.confirm_pack_replace()
             self.scroll_relative(0.68, 0.55, -5)
             self.sleep(1)
         self.log_warning('卡包觀測裡也沒有想要的卡包，取消')
@@ -673,3 +685,83 @@ class MirrorDungeonTask(LimbusBaseTask):
         if cancel:
             self.click_box(cancel, after_sleep=1.5)
         return False
+
+    def confirm_pack_replace(self) -> bool:
+        """「主题卡包"A"将被"B"替换。」(下面是星芒花費) -> 确认。"""
+        if not self.wait_until(lambda: self.ocr_roi('pack_replace', TEXT['pack_replace']), time_out=5):
+            self.log_warning('沒有看到「…将被…替换」確認視窗')
+            return not self.ocr_roi('pack_obs_title', TEXT['pack_obs_title'])
+        for _ in range(3):
+            ok = self.wait_for(lambda: self.ocr_roi('md_popup_btn', TEXT['confirm']),
+                               time_out=5, what='替換確認的「确认」')
+            self.click_box(ok, after_sleep=2.5)
+            self.next_frame()
+            if not self.ocr_roi('pack_replace', TEXT['pack_replace']):
+                break
+        self.wait_for(lambda: self.ocr_roi('pack_title', TEXT['pack_title'])
+                      and not self.ocr_roi('pack_obs_title', TEXT['pack_obs_title']),
+                      time_out=10, what='替換後回到卡包選擇畫面')
+        self.sleep(1)
+        return True
+
+    # ---------- 樓層地圖 ----------
+
+    def on_map_screen(self):
+        return self.ocr_roi('map_title', TEXT['map_title'])
+
+    def node_templates(self):
+        """assets/lc/map_*.png：檔名 map_xxx -> 設定裡的名稱 (沒有對應名稱就用 xxx)。"""
+        names = {tpl: name for name, tpl in NODE_TYPES.items()}
+        templates = {}
+        for path in sorted(TEMPLATE_DIR.glob('map_*.png')):
+            image = self.load_template(path.stem)
+            if image is not None:
+                templates[names.get(path.stem, path.stem[4:])] = image
+        return templates
+
+    def zoom_out_map(self):
+        for _ in range(MAP_ZOOM_SCROLLS):
+            self.scroll_relative(*MAP_CENTER, -10)
+            self.sleep(0.4)
+        self.sleep(1)
+
+    def save_unknown_node(self, icon):
+        UNKNOWN_NODE_DIR.mkdir(parents=True, exist_ok=True)
+        path = UNKNOWN_NODE_DIR / f'unknown_{time.strftime("%m%d_%H%M%S")}_{len(list(UNKNOWN_NODE_DIR.iterdir()))}.png'
+        cv2.imencode('.png', icon)[1].tofile(str(path))
+        self.log_info(f'不認得的節點圖示已存到 {path}，改名成 assets/lc/map_類型.png 就能辨識 (例如 map_abno.png)')
+
+    def read_map(self):
+        """回傳 [(節點, 類型)]，由上到下。"""
+        self.next_frame()
+        templates = self.node_templates()
+        result = []
+        for node in vision.find_reachable_nodes(self.frame):
+            icon = vision.node_icon(self.frame, node)
+            kind, score = vision.classify_node(icon, templates) if templates else (None, 0)
+            if kind is None or score < NODE_MATCH_THRESHOLD:
+                kind = NODE_UNKNOWN
+                self.save_unknown_node(icon)
+            result.append((node, kind))
+        return result
+
+    def choose_node(self):
+        self.wait_for(self.on_map_screen, time_out=30, what='樓層地圖 (正在探索第N层)')
+        self.sleep(1.5)
+        self.zoom_out_map()
+        nodes = self.read_map()
+        if not nodes:
+            self.screenshot('fail_map_nodes')
+            raise TaskFailed('樓層地圖上找不到可以走的節點 (亮藍色的路線)')
+        boxes = [Box(n.x - n.size // 2, n.y - n.size // 2, n.size, n.size, name=kind) for n, kind in nodes]
+        self.draw_boxes('map_node', boxes, 'green')
+        self.info_set('可走節點', '、'.join(kind for _, kind in nodes))
+
+        priority = [str(line).strip() for line in self.config.get('Node Priority', []) if str(line).strip()]
+        rank = {kind: i for i, kind in reversed(list(enumerate(priority)))}
+        node, kind = min(nodes, key=lambda nk: rank.get(nk[1], len(priority)))
+        self.log_info(f'可走節點：{"、".join(k for _, k in nodes)}，選擇：{kind}')
+        self.info_set('選擇節點', kind)
+        # 點節點中間的圖示 (外框下方有立體的邊，所以往上一點)
+        self.click(node.x, int(node.y + node.size * vision.NODE_ICON_DY), after_sleep=2)
+        return kind
