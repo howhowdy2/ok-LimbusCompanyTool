@@ -51,6 +51,7 @@ class LuxcavationTask(LimbusBaseTask):
 
     # 一鍵日常會先設定這個，用日常自己的次數；單獨執行時是 None，用任務自己的 Runs
     runs_override = None
+    mode_override = None   # 一鍵日常可以指定跳過戰鬥或進入戰鬥
     current_runs = 1
 
     # ---------- 給子類別調整 ----------
@@ -78,7 +79,8 @@ class LuxcavationTask(LimbusBaseTask):
             self.go_home()
             return
 
-        skip = self.config.get('Mode') == MODE_SKIP
+        mode = self.mode_override or self.config.get('Mode', MODE_SKIP)
+        skip = mode == MODE_SKIP
         cost = (self.SKIP_COST if skip else self.ENTER_COST) * runs
         before = self.read_modules()
         self.info_set('模組 (開始)', before)

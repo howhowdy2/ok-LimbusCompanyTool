@@ -18,6 +18,9 @@ POS = {
     'luxcavation': (0.352, 0.278),      # Drive 選單裡的「Luxcavation / 采光」
     'to_battle': (0.896, 0.815),        # 編隊畫面「To Battle!」
     'back': (0.075, 0.062),             # 左上返回鍵
+    'pass_banner': (0.84, 0.33),        # 主畫面右上「SEASON N LIMBUS PASS」橫幅
+    'pass_daily_tab': (0.212, 0.355),   # 通行证任务左邊直排的「日常任务」
+    'pass_weekly_tab': (0.212, 0.555),  # 「周常任务」
 }
 
 # 區域 (x0, y0, x1, y1)：拿來做 OCR 或限制模板比對的搜尋範圍
@@ -42,12 +45,23 @@ ROI = {
     # 纺锤點下去後的「选择关卡」視窗
     'level_title': (0.38, 0.12, 0.62, 0.22),
     'level_actions': (0.55, 0.30, 0.72, 0.80),     # 每一列右邊的「跳过战斗」/「进入」
+    # 通行證
+    'pass_banner': (0.72, 0.24, 0.96, 0.30),       # 橫幅上的「LIMBUS PASS」小字
+    'pass_tabs': (0.10, 0.03, 0.36, 0.12),         # 「战斗通行证 / 通行证任务」
+    'pass_missions': (0.30, 0.26, 0.44, 0.83),     # 任務名稱 (只取左半邊的字)
+    'pass_claim_all': (0.58, 0.77, 0.72, 0.86),    # 「全部领取」
     # 戰鬥中右下角的「胜率 / 伤害」按鈕 (行動槽變多時會往右移，範圍抓寬一點)
     'battle_hud': (0.72, 0.71, 0.90, 0.85),
     # 結算畫面 (战斗胜利)
     'result_title': (0.65, 0.10, 0.98, 0.26),
     'result_confirm': (0.80, 0.72, 0.97, 0.86),
 }
+
+# 通行證任務：可以領取的那一列背景是棕橘色，其他是黑色。
+# 在任務名稱右邊這塊取樣 (相對座標的 x 範圍)，紅色通道平均 > PASS_CLAIMABLE_MIN_RED 就算可領
+PASS_ROW_SAMPLE_X = (0.445, 0.46)
+PASS_CLAIMABLE_MIN_RED = 40
+
 
 # 「连续进行」下拉面板
 #   ▲/▼ 開關：用 vision.find_bright_blob 在文字右邊找白色三角形
@@ -76,6 +90,10 @@ TEXT = {
     'enk_owned': ['拥有', 'Own'],
     'not_enough': ['不足', 'Not enough', 'Insufficient'],
     'win_rate': ['Win Rate', 'WinRate', '胜率'],
+    'pass_banner': ['LIMBUS PASS', 'PASS'],
+    'pass_missions_tab': ['Pass Missions', '通行证任务'],
+    'pass_rewards_tab': ['Battle Pass', '战斗通行证'],
+    'claim_all': ['Claim All', '全部领取'],
     'victory': ['Victory', '胜利'],
     'defeat': ['Defeat', '失败'],
 }

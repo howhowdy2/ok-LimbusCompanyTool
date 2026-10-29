@@ -11,10 +11,11 @@ It only reads the screen and simulates mouse/keyboard input; it never reads or m
 
 | Task | What it does |
 |---|---|
-| Daily (一鍵日常) | Convert Enkephalin to modules, then Thread and EXP Luxcavation |
+| Daily (一鍵日常) | Convert Enkephalin, Thread and EXP Luxcavation, then claim pass rewards |
 | Enkephalin (換體力) | Convert all Enkephalin into Enkephalin Modules (never spends Lunacy) |
 | Thread Luxcavation (打纺锤本) | Skip today's open Thread stage, 3 times by default, limited to the remaining daily bonus |
 | EXP Luxcavation (打經驗本) | Skip Battle (default) or fight with the last-used team; runs and stage are configurable |
+| Pass Rewards (領通行證獎勵) | Open LIMBUS PASS from home, claim daily / weekly missions, then Claim All (optional) |
 | Capture Template (擷取模板) | Save the reference images used for recognition from the current game screen |
 
 ## Requirements

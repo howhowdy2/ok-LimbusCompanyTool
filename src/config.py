@@ -72,6 +72,7 @@ config = {
         ["src.tasks.EnkephalinTask", "EnkephalinTask"],
         ["src.tasks.ExpLuxcavationTask", "ExpLuxcavationTask"],
         ["src.tasks.ThreadLuxcavationTask", "ThreadLuxcavationTask"],
+        ["src.tasks.PassTask", "PassTask"],
         ["src.tasks.CaptureTemplateTask", "CaptureTemplateTask"],
         ["ok", "DiagnosisTask"],
     ],
