@@ -43,7 +43,7 @@ SHOP_DESCRIPTIONS = {
     'Shop Keywords': '要買哪些關鍵詞的饰品 (看饰品右下角的圖示)，越上面越優先；空的 = 不限',
     'Shop Tiers': '要買哪些等級的饰品 (左上角的羅馬數字)，不勾 = 不限',
     'Shop Refreshes': '沒有想買的饰品時，最多按幾次右上「刷新」',
-    'Shop Enhance': '買完後用「强化饰品」強化亮起的饰品 (有勾關鍵詞時只強化那些關鍵詞)',
+    'Shop Enhance': '買完後用「强化饰品」強化亮起的饰品 (符合 Shop Keywords 的先強化)',
     'Enhance Level': '強化選 + 還是 ++',
     'Shop Fuse': '用「合成饰品」把低等級饰品合成高等級 (會消耗材料饰品)',
     'Fuse Keyword': '合成出來的饰品關鍵詞',
@@ -128,13 +128,14 @@ class MirrorShopMixin:
             self.next_frame()
             if self.handle_gift_popup():
                 continue
+            ok = self.ocr_roi('md_popup_btn', TEXT['confirm'])   # 「要离开商店吗?」→ 确认 (要先檢查，商店畫面還在後面)
+            if ok:
+                self.click_box(ok, after_sleep=2.5)
+                continue
             if self.on_shop_screen():
                 self.click_relative(*SHOP_LEAVE_BTN, after_sleep=2)
                 continue
-            ok = self.ocr_roi('md_popup_btn', TEXT['confirm'])   # 可能會問「確定要離開嗎」
-            if ok:
-                self.click_box(ok, after_sleep=2)
-                continue
+            self.log_info('離開商店')
             return
         self.screenshot('fail_shop_leave')
         raise TaskFailed('按了「离开」還在商店')
@@ -225,8 +226,10 @@ class MirrorShopMixin:
             money = self.read_number('enhance_money')
             if not self.money_ok(money, '強化'):
                 break
-            gifts = [g for g in self.lit_gifts(ENHANCE_GRID) if g[0] not in tried
-                     and (not keywords or g[2] in keywords)]
+            # 符合關鍵詞的先強化 (照清單順序)，其他的之後
+            rank = {k: i for i, k in enumerate(keywords)}
+            gifts = sorted((g for g in self.lit_gifts(ENHANCE_GRID) if g[0] not in tried),
+                           key=lambda g: rank.get(g[2], len(rank)))
             if not gifts:
                 break
             index, tier, kw = gifts[0]

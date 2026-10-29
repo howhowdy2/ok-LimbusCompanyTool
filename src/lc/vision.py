@@ -371,21 +371,47 @@ def classify_node(icon: np.ndarray, templates: dict) -> tuple[str | None, float]
 
 # ---------- 鏡像迷宮事件選項 ----------
 
-EVENT_GIFT, EVENT_CHECK, EVENT_BATTLE, EVENT_OTHER = '獲得飾品', '判定', '戰鬥', '其他'
-EVENT_KINDS = (EVENT_GIFT, EVENT_CHECK, EVENT_OTHER, EVENT_BATTLE)
+EVENT_GAIN, EVENT_FOLLOW, EVENT_CHECK, EVENT_OTHER, EVENT_BATTLE = (
+    '選擇後獲得', '根據後續獲得', '判定', '其他', '戰鬥')
+EVENT_KINDS = (EVENT_GAIN, EVENT_FOLLOW, EVENT_CHECK, EVENT_OTHER, EVENT_BATTLE)
 
 
 def classify_event_option(text: str) -> str:
-    """事件選項看下面那行小字：「选择后，获得1件泛用E.G.O饰品」-> 獲得飾品；有「判定」-> 判定；
-    有「战斗」-> 戰鬥；其他 (沒有小字、沒見過的) -> 其他。"""
+    """事件選項看下面那行小字：
+    「选择后，获得1件…」-> 選擇後獲得；「选择后，根据后续选项获得…」-> 根據後續獲得；
+    有「判定」-> 判定；有「战斗」-> 戰鬥；其他 (沒有小字、沒見過的) -> 其他。"""
     text = normalize_name(text)
-    if '饰品' in text and ('获得' in text or '获取' in text):
-        return EVENT_GIFT
-    if '判定' in text:
-        return EVENT_CHECK
     if '战斗' in text or '交战' in text:
         return EVENT_BATTLE
+    if '判定' in text:
+        return EVENT_CHECK
+    if '获得' in text or '获取' in text:
+        return EVENT_FOLLOW if '根据' in text else EVENT_GAIN
     return EVENT_OTHER
+
+
+def event_gift_count(text: str) -> float:
+    """選項能拿到幾件饰品 (期望值)：「获得2件」-> 2；「50%概率获得1件」-> 0.5。"""
+    text = normalize_name(text)
+    total = 0.0
+    for found in re.finditer(r'(?:(\d+)%(?:概率|几率|机率))?获得(\d+)件', text):
+        chance = int(found.group(1)) / 100 if found.group(1) else 1.0
+        total += chance * int(found.group(2))
+    if total == 0 and '获得' in text and '饰品' in text:
+        total = 1.0
+    return total
+
+
+JUDGE_LEVELS = {'极低': 0, '低': 1, '普通': 2, '高': 3, '极高': 4}
+
+
+def judge_level(text: str) -> int | None:
+    """罪人頭上的判定機率：极高 4 > 高 3 > 普通 2 > 低 1 > 极低 0。"""
+    text = normalize_name(text).replace('極', '极')
+    for name in ('极高', '极低', '普通', '高', '低'):
+        if name in text:
+            return JUDGE_LEVELS[name]
+    return None
 
 
 def group_by_rows(items, key_y, gap: float):

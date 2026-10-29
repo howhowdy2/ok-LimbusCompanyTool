@@ -108,6 +108,9 @@ ROI = {
     'gift_reward_level': (0.09, 0.61, 0.91, 0.66),  # 「敌方等级增加 +2」
     'gift_reward_aff': (0.09, 0.66, 0.91, 0.73),    # 苦難名稱和效果
     'gift_reward_btns': (0.66, 0.76, 0.97, 0.85),   # 「拒绝饰品」「选择 0/2」
+    # 事件的判定
+    'judge_title': (0.64, 0.41, 0.87, 0.48),       # 「选择一位罪人来进行判定:」
+    'judge_levels': (0.03, 0.84, 0.69, 0.877),     # 罪人頭上的「极高 / 高 / 普通 / 低 / 极低」
     'node_enter': (0.80, 0.69, 0.97, 0.82),        # 點節點後右下的「进入」
     'event_skip': (0.80, 0.84, 0.97, 0.95),        # 事件畫面右下「SKIP」
     'event_options_title': (0.52, 0.13, 0.70, 0.23),   # 「选项」
@@ -189,6 +192,8 @@ NODE_TYPES = {
 NODE_UNKNOWN = '未知'
 NODE_ENTER_BTN = (0.885, 0.754)     # 「进入」(OCR 找不到時點這裡)
 EVENT_SKIP_BTN = (0.885, 0.898)     # 「SKIP」(沒亮也照點，點到出現選項)
+JUDGE_SINNER_X0, JUDGE_SINNER_DX = 0.061, 0.054   # 12 個罪人頭像中心 x
+JUDGE_SINNER_Y = 0.907
 EVENT_OPTION_GAP = 0.07             # 同一個選項框裡兩行字的最大間距 (畫面高度比例)
 NODE_MATCH_THRESHOLD = 0.6
 
@@ -273,6 +278,7 @@ TEXT = {
     'enter': ['Enter', '进入'],
     'pack_replace': ['替换', 'replace'],
     'shop_title': ['商店', 'Shop'],
+    'judge_title': ['进行判定', '选择一位罪人'],
     'reward_card_title': ['遭遇战奖励', '奖励卡'],
     'gift_reward_marker': ['追加的苦难', '苦难'],
     'leave': ['离开', 'Leave'],

@@ -221,10 +221,23 @@ class MapNodeTest(unittest.TestCase):
 
 class EventOptionTest(unittest.TestCase):
     def test_classify(self):
-        self.assertEqual('獲得飾品', vision.classify_event_option('闭上双眼。 选择后，获得1件泛用E.G.O饰品'))
+        self.assertEqual('選擇後獲得', vision.classify_event_option('视而不见。 选择后，获得1件泛用E.G.O饰品'))
+        self.assertEqual('根據後續獲得',
+                         vision.classify_event_option('真心提醒。 选择后，根据后续选项获得1件流血E.G.O饰品'))
         self.assertEqual('判定', vision.classify_event_option('伸出手 进行判定'))
         self.assertEqual('戰鬥', vision.classify_event_option('拔刀 进入战斗'))
         self.assertEqual('其他', vision.classify_event_option('还以对视。'))
+
+    def test_gift_count(self):
+        self.assertEqual(2, vision.event_gift_count('选择后，获得2件泛用E.G.O饰品'))
+        self.assertEqual(0.5, vision.event_gift_count('选择后，50%概率获得1件泛用E.G.O饰品'))
+        self.assertEqual(0, vision.event_gift_count('还以对视。'))
+
+    def test_judge_level(self):
+        self.assertEqual(4, vision.judge_level('极高'))
+        self.assertEqual(3, vision.judge_level('高'))
+        self.assertEqual(0, vision.judge_level('極低'))
+        self.assertIsNone(vision.judge_level('85'))
 
     def test_group_rows(self):
         ys = [331, 369, 527]   # 第一個選項兩行字，第二個一行

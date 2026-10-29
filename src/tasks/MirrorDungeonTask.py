@@ -14,6 +14,7 @@ from src.lc.layout import (PACK_DRAG_FROM_Y, PACK_DRAG_TO_Y, PACK_MODE_ARROW, PA
                            GRACE_COL_X, GRACE_NAMES, GRACE_PLUS_DX, GRACE_PLUS_Y,
                            GRACE_PLUSPLUS_DX, GRACE_ROW_Y, TEXT,
                            EVENT_OPTION_GAP, EVENT_SKIP_BTN, NODE_ENTER_BTN,
+                           JUDGE_SINNER_DX, JUDGE_SINNER_X0, JUDGE_SINNER_Y,
                            MAP_CENTER, MAP_ZOOM_SCROLLS, NODE_MATCH_THRESHOLD, NODE_TYPES, NODE_UNKNOWN)
 from src.tasks.LimbusBaseTask import TEMPLATE_DIR, LimbusBaseTask, TaskFailed
 from src.tasks.mirror_rewards import REWARD_DEFAULTS, REWARD_DESCRIPTIONS, REWARD_TYPES, MirrorRewardMixin
@@ -32,7 +33,7 @@ MODE_KEEP, MODE_HARD, MODE_NORMAL = '不切換', '困难', '普通'
 NODE_DEFAULT = ['事件', '戰鬥', '異想體']
 UNKNOWN_NODE_DIR = Path('screenshots') / 'map_nodes'
 EVENT_LOG_DIR = Path('screenshots') / 'event_options'
-EVENT_DEFAULT = [vision.EVENT_GIFT, vision.EVENT_CHECK, vision.EVENT_OTHER, vision.EVENT_BATTLE]
+EVENT_DEFAULT = list(vision.EVENT_KINDS)
 
 
 def pack_key(floor: int) -> str:
@@ -83,7 +84,7 @@ class MirrorDungeonTask(MirrorShopMixin, MirrorRewardMixin, LimbusBaseTask):
             'Pack Use Observe': False,
             'Node Priority': list(NODE_DEFAULT),
             'Map Lookahead': True,
-            'Event Priority': list(EVENT_DEFAULT),
+            'Event Option Priority': list(EVENT_DEFAULT),
             'Battle Timeout (s)': 400,
         })
         self.config_type['Pack Difficulty'] = {'type': 'drop_down',
@@ -107,9 +108,10 @@ class MirrorDungeonTask(MirrorShopMixin, MirrorRewardMixin, LimbusBaseTask):
                              '可用：' + '、'.join(list(NODE_TYPES) + [NODE_UNKNOWN])
                              + '。沒列到的排最後，一樣優先時走上面那條',
             'Map Lookahead': '選路時也看再下一步：分數 = 下個節點的順位 + 它連到的最好節點的順位，越小越好',
-            'Event Priority': '事件選項的優先順序，一行一個，看選項下面的小字分類：'
-                              + '、'.join(vision.EVENT_KINDS)
-                              + '。「其他」= 沒有小字或沒見過的 (會存到 screenshots/event_options 給你看)',
+            'Event Option Priority': '事件選項的優先順序，一行一個，看選項下面的小字分類：'
+                                     + '、'.join(vision.EVENT_KINDS)
+                                     + '。同一級時選能拿到比較多饰品的 (50%概率算半件)。'
+                                       '「其他」= 沒有小字或沒見過的非戰鬥選項 (會存到 screenshots/event_options)',
             'Battle Timeout (s)': '迷宮裡單場戰鬥最多等幾秒',
         })
         for slot in range(1, OBSERVE_SLOTS + 1):
@@ -146,7 +148,7 @@ class MirrorDungeonTask(MirrorShopMixin, MirrorRewardMixin, LimbusBaseTask):
         # 設定畫面照流程順序顯示：恩惠 → 饰品观测 → 卡包 (各層想要的 → 避開 → 刷新/觀測)
         pack_keys = (['Pack Difficulty'] + [pack_key(f) for f in pack_data.FLOORS]
                      + ['Pack Avoid', 'Pack Use Refresh', 'Pack Use Observe', 'Node Priority', 'Map Lookahead',
-                        'Event Priority', 'Battle Timeout (s)'])
+                        'Event Option Priority', 'Battle Timeout (s)'])
         for key in pack_keys:
             self.default_config[key] = self.default_config.pop(key)
         # 戰後獎勵、商店設定放最後
@@ -951,11 +953,12 @@ class MirrorDungeonTask(MirrorShopMixin, MirrorRewardMixin, LimbusBaseTask):
         self.log_info(f'沒見過的事件選項，已記到 {path}：{text}')
 
     def choose_event_option(self, options):
-        priority = [str(x).strip() for x in self.config.get('Event Priority', EVENT_DEFAULT) if str(x).strip()]
+        priority = [str(x).strip() for x in self.config.get('Event Option Priority', EVENT_DEFAULT) if str(x).strip()]
         for _, text, kind in options:
             if kind == vision.EVENT_OTHER:
                 self.log_unknown_option(text)
-        box, text, kind = min(options, key=lambda o: priority.index(o[2]) if o[2] in priority else len(priority))
+        box, text, kind = min(options, key=lambda o: (priority.index(o[2]) if o[2] in priority else len(priority),
+                                                     -vision.event_gift_count(o[1])))
         self.log_info('事件選項：' + '、'.join(f'{t} [{k}]' for _, t, k in options) + f'，選擇：{text}')
         self.info_set('事件選項', f'{kind}：{text}')
         self.click_box(box, after_sleep=2)
@@ -976,6 +979,9 @@ class MirrorDungeonTask(MirrorShopMixin, MirrorRewardMixin, LimbusBaseTask):
                 return self.fight_node() != 'defeat'
             if self.handle_gift_popup():
                 continue
+            if self.ocr_roi('judge_title', TEXT['judge_title']):
+                self.choose_judge_sinner()
+                continue
             if self.ocr_roi('event_options_title', TEXT['event_options_title']):
                 options = self.event_options()
                 if options:
@@ -985,6 +991,32 @@ class MirrorDungeonTask(MirrorShopMixin, MirrorRewardMixin, LimbusBaseTask):
             self.click_relative(*EVENT_SKIP_BTN, after_sleep=1)
         self.screenshot('fail_event')
         raise TaskFailed('事件處理超時 (可能是判定或戰鬥畫面，還沒做)，請把截圖給我')
+
+    def choose_judge_sinner(self):
+        """判定：選頭上機率最高的罪人 (极高 > 高 > 普通 > 低 > 极低)，再按右下「继续」。"""
+        best, best_level, best_text = None, -1, ''
+        for b in self.ocr_roi('judge_levels'):
+            level = vision.judge_level(b.name)
+            if level is None:
+                continue
+            index = round(((b.x + b.width / 2) / self.width - JUDGE_SINNER_X0) / JUDGE_SINNER_DX)
+            if 0 <= index < 12 and level > best_level:
+                best, best_level, best_text = index, level, b.name
+        if best is None:
+            self.screenshot('fail_judge')
+            self.log_warning('讀不到罪人的判定機率，選第一個')
+            best = 0
+        self.log_info(f'判定：選第 {best + 1} 個罪人 ({best_text or "?"})')
+        self.info_set('判定', f'第 {best + 1} 個罪人 {best_text}')
+        self.click_relative(JUDGE_SINNER_X0 + JUDGE_SINNER_DX * best, JUDGE_SINNER_Y, after_sleep=1.5)
+        # 選了罪人後，右下角的 SKIP 會變成「继续」，按它開始判定
+        button = self.wait_until(lambda: self.ocr_roi('event_skip', TEXT['continue']), time_out=4)
+        if button:
+            self.click_box(button, after_sleep=2.5)
+        else:
+            self.log_warning('沒看到「继续」，直接點右下角')
+            self.click_relative(*EVENT_SKIP_BTN, after_sleep=2.5)
+        self.info_incr('判定')
 
     # ---------- 戰鬥節點 (跟經驗本「進入戰鬥」一樣) ----------
 
