@@ -28,7 +28,9 @@ SHOP_DEFAULTS = {
     'Enhance Level': '+',
     'Shop Fuse': False,
     'Fuse Keyword': GIFT_KEYWORDS[0],
-    'Fuse Tiers': ['4'],
+    'Fuse Tiers': ['3', '4'],
+    'Fuse Material Tiers': ['1', '2'],
+    'Fuse Skip Enhanced': True,
 }
 SHOP_TYPES = {
     'Shop Keywords': {'type': 'drop_down', 'options_available': GIFT_KEYWORDS},   # 清單，可排順序
@@ -36,6 +38,7 @@ SHOP_TYPES = {
     'Enhance Level': {'type': 'drop_down', 'options': ENHANCE_LEVELS},
     'Fuse Keyword': {'type': 'drop_down', 'options': GIFT_KEYWORDS},
     'Fuse Tiers': {'type': 'multi_selection', 'options': FUSE_TIER_OPTIONS},
+    'Fuse Material Tiers': {'type': 'multi_selection', 'options': FUSE_TIER_OPTIONS},
 }
 SHOP_DESCRIPTIONS = {
     'Shop Enable': '走到商店時要不要買 / 強化 / 合成 (關掉就直接离开)',
@@ -47,7 +50,9 @@ SHOP_DESCRIPTIONS = {
     'Enhance Level': '強化選 + 還是 ++',
     'Shop Fuse': '用「合成饰品」把低等級饰品合成高等級 (會消耗材料饰品)',
     'Fuse Keyword': '合成出來的饰品關鍵詞',
-    'Fuse Tiers': '想合成的等級，例如只勾 3、4。點數：I=3 II=6 III=10 IV=15；'
+    'Fuse Material Tiers': '哪些等級的饰品可以拿去當合成材料 (預設 1、2 級)',
+    'Fuse Skip Enhanced': '不拿強化過 (右上角有 +) 的饰品當材料',
+    'Fuse Tiers': '想合成的等級 (做得到最高的優先)，例如勾 3、4。點數：I=3 II=6 III=10 IV=15；'
                   '合計 ≤10→1級、11~16→2級、17~24→3級、≥25→4級 (最多 3 個材料)',
 }
 
@@ -87,7 +92,7 @@ class MirrorShopMixin:
         return int((x0 + dx * (index % OWNED_COLS)) * self.width), int((y0 + dy * (index // OWNED_COLS)) * self.height)
 
     def lit_gifts(self, grid):
-        """強化 / 合成畫面右邊亮起的饰品：[(索引, 等級, 關鍵詞)]。"""
+        """強化 / 合成畫面右邊亮起的饰品：[(索引, 等級, 關鍵詞, 強化過嗎)]。"""
         self.next_frame()
         templates = self.keyword_templates()
         half = int(0.045 * self.height)
@@ -104,7 +109,8 @@ class MirrorShopMixin:
                 continue
             tier = vision.gift_tier(self.frame, (cx, cy))
             kw, score = vision.gift_keyword(self.frame, (cx, cy), templates)
-            result.append((index, tier, kw if score >= KEYWORD_MATCH_THRESHOLD else None))
+            result.append((index, tier, kw if score >= KEYWORD_MATCH_THRESHOLD else None,
+                           vision.gift_enhanced(self.frame, (cx, cy))))
         return result
 
     def close_sub_screen(self):
@@ -232,7 +238,7 @@ class MirrorShopMixin:
                            key=lambda g: rank.get(g[2], len(rank)))
             if not gifts:
                 break
-            index, tier, kw = gifts[0]
+            index, tier, kw, _ = gifts[0]
             tried.add(index)
             self.enhance_gift(index, kw)
         self.close_sub_screen()
@@ -272,7 +278,10 @@ class MirrorShopMixin:
         for _ in range(3):
             if not self.choose_fuse_keyword(keyword):
                 break
-            gifts = [g for g in self.lit_gifts(FUSE_GRID) if g[1]]
+            materials = {int(t) for t in self.config.get('Fuse Material Tiers', ['1', '2'])}
+            skip_enhanced = self.config.get('Fuse Skip Enhanced', True)
+            gifts = [g for g in self.lit_gifts(FUSE_GRID)
+                     if g[1] in materials and not (skip_enhanced and g[3])]
             combo = shop.best_fuse_combo([g[1] for g in gifts], targets)
             if combo is None:
                 self.log_info('材料不夠合成想要的等級')
@@ -281,7 +290,7 @@ class MirrorShopMixin:
             total = sum(shop.FUSE_POINTS[g[1]] for g in picked)
             self.log_info(f'合成{keyword}：材料 ' + '、'.join(TIER_NAMES[g[1] - 1] for g in picked)
                           + f' (共 {total} 點 → {shop.fuse_result_tier(total)} 級)')
-            for index, _, _ in picked:
+            for index, _, _, _ in picked:
                 self.click(*self.gift_center(FUSE_GRID, index), after_sleep=1)
             self.click_relative(*FUSE_BTN, after_sleep=2.5)
             for _ in range(6):   # 確認 / 獲得饰品

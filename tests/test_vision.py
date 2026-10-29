@@ -310,6 +310,18 @@ class RewardTest(unittest.TestCase):
         self.assertEqual([1, 3, 0, 2], order)
 
 
+class GiftEnhancedTest(unittest.TestCase):
+    def test_orange_plus(self):
+        frame = np.full((1440, 2560, 3), (30, 30, 30), np.uint8)
+        s = vision.GIFT_HALF * 1440
+        cx, cy = 1000, 700
+        self.assertFalse(vision.gift_enhanced(frame, (cx, cy)))
+        px, py, arm = int(cx + 0.55 * s), int(cy - 0.55 * s), int(0.2 * s)
+        cv2.rectangle(frame, (px - arm, py - 6), (px + arm, py + 6), (30, 120, 240), -1)   # 橘色十字
+        cv2.rectangle(frame, (px - 6, py - arm), (px + 6, py + arm), (30, 120, 240), -1)
+        self.assertTrue(vision.gift_enhanced(frame, (cx, cy)))
+
+
 class KeywordsRegexTest(unittest.TestCase):
     def test_contains_and_ignores_case(self):
         pattern = vision.keywords_regex(['To Battle', '出击'])

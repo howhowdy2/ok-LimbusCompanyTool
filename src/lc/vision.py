@@ -631,3 +631,21 @@ def read_map_graph(frame: np.ndarray, train, templates: dict, threshold: float =
             follows.append((nxt, k2 if s2 >= threshold else None))
         result.append((node, kind if score >= threshold else None, score, follows))
     return result
+
+
+def gift_enhanced(frame: np.ndarray, center, half: float = GIFT_HALF) -> bool:
+    """饰品右上角有橘色的「+」= 強化過。看橘色、差不多正方形、填滿一半左右的一塊 (十字形)。"""
+    height = frame.shape[0]
+    s = half * height
+    cx, cy = center
+    region = frame[max(0, int(cy - 0.95 * s)):int(cy - 0.1 * s), int(cx + 0.1 * s):int(cx + 0.95 * s), :3]
+    if region.size == 0:
+        return False
+    hsv = cv2.cvtColor(region, cv2.COLOR_BGR2HSV)
+    mask = ((hsv[:, :, 0] >= 5) & (hsv[:, :, 0] <= 22) & (hsv[:, :, 1] > 140) & (hsv[:, :, 2] > 40))
+    count, _, stats, _ = cv2.connectedComponentsWithStats(mask.astype(np.uint8))
+    for i in range(1, count):
+        w, h, area = stats[i, cv2.CC_STAT_WIDTH], stats[i, cv2.CC_STAT_HEIGHT], stats[i, cv2.CC_STAT_AREA]
+        if w >= 0.25 * s and h >= 0.25 * s and 0.7 < w / h < 1.4 and 0.3 < area / (w * h) < 0.8:
+            return True
+    return False
