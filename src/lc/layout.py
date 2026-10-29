@@ -89,6 +89,17 @@ ROI = {
     'pack_obs_ok': (0.53, 0.76, 0.71, 0.85),       # 觀測視窗「确认」
     'pack_replace': (0.33, 0.33, 0.67, 0.42),      # 「主题卡包"A"将被"B"替换。」(確認按鈕用 md_popup_btn)
     'map_title': (0.02, 0.11, 0.22, 0.18),         # 樓層地圖左上「正在探索第1层」
+    # 鏡像迷宮商店
+    'shop_title': (0.15, 0.14, 0.26, 0.21),        # 左上「商店」
+    'shop_leave': (0.82, 0.86, 0.96, 0.94),        # 右下「离开」
+    'shop_money': (0.43, 0.16, 0.50, 0.22),        # 目前經費 (中間偏左的 656)
+    'shop_refresh_cost': (0.73, 0.20, 0.83, 0.24), # 「刷新」下面的花費
+    'shop_items': (0.42, 0.42, 0.92, 0.72),        # 8 格饰品的價格和名稱
+    'shop_buy_title': (0.33, 0.21, 0.56, 0.27),    # 「购买E.G.O饰品」
+    'shop_buy_btn': (0.51, 0.63, 0.66, 0.71),      # 「购买」
+    'shop_sub_title': (0.38, 0.10, 0.62, 0.19),    # 「强化E.G.O饰品」「合成E.G.O饰品」「合成 - 关键词选择」
+    'enhance_money': (0.73, 0.10, 0.88, 0.18),     # 強化畫面右上的經費 (501 ▸ 451)
+    'enhance_cost': (0.17, 0.68, 0.42, 0.75),      # 「是否消耗50经费进行强化?」
     'node_enter': (0.80, 0.69, 0.97, 0.82),        # 點節點後右下的「进入」
     'event_skip': (0.80, 0.84, 0.97, 0.95),        # 事件畫面右下「SKIP」
     'event_options_title': (0.52, 0.13, 0.70, 0.23),   # 「选项」
@@ -174,6 +185,35 @@ EVENT_OPTION_GAP = 0.07             # 同一個選項框裡兩行字的最大間
 NODE_MATCH_THRESHOLD = 0.6
 
 
+# 鏡像迷宮商店 (相對座標，量自 2560x1440 截圖)
+SHOP_ITEM_X = (0.4875, 0.6075, 0.7275, 0.8475)   # 8 格饰品圖示中心，4 欄 x 2 列
+SHOP_ITEM_Y = (0.367, 0.58)
+SHOP_PRICE_DY = (0.05, 0.097)      # 價格在圖示下方這個範圍
+SHOP_REFRESH_BTN = (0.793, 0.169)
+SHOP_LEAVE_BTN = (0.885, 0.90)
+SHOP_ENHANCE_BTN = (0.125, 0.544)
+SHOP_FUSE_BTN = (0.2165, 0.544)
+SHOP_BUY_BTN = (0.585, 0.673)
+SHOP_CLOSE_BTN = (0.383, 0.813)    # 強化 / 合成畫面「关闭」
+# 強化 / 合成畫面右邊「所持饰品」：每列 5 個
+ENHANCE_GRID = (0.5325, 0.0718, 0.356, 0.13)   # 第一個 x, 間距 x, 第一列 y, 列距
+FUSE_GRID = (0.53, 0.0745, 0.407, 0.13)
+OWNED_COLS, OWNED_ROWS = 5, 3
+ENHANCE_BTN = (0.615, 0.813)
+ENHANCE_PLUS = (0.7085, 0.709)
+ENHANCE_PLUSPLUS = (0.805, 0.709)
+ENHANCE_CONFIRM = (0.615, 0.809)
+FUSE_CENTER = (0.2875, 0.487)      # 合成畫面中間的格子 (點了選關鍵詞)
+FUSE_BTN = (0.615, 0.813)
+KW_CELL_X = (0.26, 0.3785, 0.4965, 0.6145, 0.7325)   # 關鍵詞選擇：5 欄 x 2 列，順序同 GIFT_KEYWORDS
+KW_CELL_Y = (0.409, 0.609)
+KW_CONFIRM = (0.615, 0.787)
+KEYWORD_TEMPLATES = dict(zip(GIFT_KEYWORDS, ['kw_burn', 'kw_bleed', 'kw_tremor', 'kw_rupture', 'kw_sinking',
+                                              'kw_poise', 'kw_charge', 'kw_slash', 'kw_pierce', 'kw_blunt']))
+KEYWORD_MATCH_THRESHOLD = 0.85
+GIFT_LIT_VALUE = 40                # 所持饰品亮起 (可強化 / 可當材料) 的平均亮度
+
+
 # OCR 關鍵字：英文版和 LLC 簡中漢化都列上去 (繁體會被自動轉成簡體)
 TEXT = {
     'luxcavation': ['Luxcavation', '采光'],
@@ -214,6 +254,13 @@ TEXT = {
     'refresh': ['刷新', 'Refresh'],
     'enter': ['Enter', '进入'],
     'pack_replace': ['替换', 'replace'],
+    'shop_title': ['商店', 'Shop'],
+    'leave': ['离开', 'Leave'],
+    'buy': ['购买', 'Purchase', 'Buy'],
+    'enhance_title': ['强化E', '强化'],
+    'enhance_cost': ['消耗', '经费'],
+    'fuse_title': ['合成E', '合成E.G.O'],
+    'kw_select': ['关键词选择', 'Keyword'],
     'map_title': ['正在探索', 'Exploring'],
     'skip': ['SKIP', 'Skip'],
     'event_options_title': ['选项', 'Choices', 'Options'],

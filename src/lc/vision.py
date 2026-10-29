@@ -417,3 +417,60 @@ def find_train(frame: np.ndarray, area=MAP_AREA) -> tuple[int, int] | None:
         return None
     cx, cy = centroids[best]
     return int(cx), int(cy)
+
+
+# ---------- E.G.O 饰品圖示：左上的等級 (I~IV)、右下的關鍵詞圖示 ----------
+
+GIFT_HALF = 0.055   # 饰品圖示 (含黃黑外框) 的一半大小，畫面高度比例
+
+
+def yellow_mask(image: np.ndarray) -> np.ndarray:
+    image = image[:, :, :3].astype(np.int16)
+    b, g, r = image[:, :, 0], image[:, :, 1], image[:, :, 2]
+    return ((r > 170) & (g > 120) & (b < 90) & (r - b > 110)).astype(np.uint8)
+
+
+def gift_tier(frame: np.ndarray, center, half: float = GIFT_HALF) -> int | None:
+    """數饰品左上角黃色的羅馬數字：直的細條 = I，比較寬的 = V。讀不到回傳 None。"""
+    height = frame.shape[0]
+    s = half * height
+    cx, cy = center
+    x0, x1 = int(cx - 0.85 * s), int(cx - 0.2 * s)
+    y0, y1 = int(cy - 0.85 * s), int(cy - 0.15 * s)
+    mask = yellow_mask(frame[max(0, y0):y1, max(0, x0):x1])
+    count, _, stats, _ = cv2.connectedComponentsWithStats(mask)
+    ones = fives = 0
+    for i in range(1, count):
+        w, h = stats[i, cv2.CC_STAT_WIDTH], stats[i, cv2.CC_STAT_HEIGHT]
+        if h < 0.18 * s:
+            continue                    # 外框的斜紋很短
+        if w * 1.8 <= h:
+            ones += 1
+        elif w <= h * 1.3:
+            fives += 1
+    if fives:
+        return 4 if ones == 1 else 5 if ones == 0 else None
+    return ones if 1 <= ones <= 3 else None
+
+
+def gift_keyword(frame: np.ndarray, center, templates: dict, half: float = GIFT_HALF):
+    """饰品右下角的關鍵詞小圖示，跟 kw_*.png 比對 (彩色，多種大小)。回傳 (名稱, 分數)。"""
+    height = frame.shape[0]
+    s = half * height
+    cx, cy = center
+    region = frame[int(cy + 0.25 * s):int(cy + 1.05 * s), int(cx + 0.25 * s):int(cx + 1.05 * s), :3]
+    best, best_score = None, -1.0
+    if region.size == 0:
+        return best, best_score
+    for name, tpl in templates.items():
+        for ratio in (0.3, 0.35, 0.4, 0.46):
+            size = max(8, min(int(s * ratio), region.shape[0] - 1, region.shape[1] - 1))
+            small = cv2.resize(tpl[:, :, :3], (size, size), interpolation=cv2.INTER_AREA)
+            # 只比對圖示本身 (亮的部分)，背景不同不影響
+            mask = (small.max(axis=2) > 90).astype(np.uint8)
+            mask = cv2.merge([mask, mask, mask])
+            response = cv2.matchTemplate(region, small, cv2.TM_SQDIFF_NORMED, mask=mask)
+            score = 1.0 - float(np.nan_to_num(response, nan=2.0, posinf=2.0).min())
+            if score > best_score:
+                best, best_score = name, score
+    return best, best_score

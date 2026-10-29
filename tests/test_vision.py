@@ -220,6 +220,44 @@ class EventOptionTest(unittest.TestCase):
         self.assertEqual([[331, 369], [527]], groups)
 
 
+class ShopLogicTest(unittest.TestCase):
+    def test_fuse_tier(self):
+        from src.lc import shop
+        self.assertEqual(1, shop.fuse_result_tier(10))
+        self.assertEqual(2, shop.fuse_result_tier(11))
+        self.assertEqual(3, shop.fuse_result_tier(24))
+        self.assertEqual(4, shop.fuse_result_tier(25))
+
+    def test_best_combo(self):
+        from src.lc import shop
+        # III III II I I：III+III+II = 26 -> IV，比 III+III+I (23 -> III) 好
+        self.assertEqual((0, 1, 2), shop.best_fuse_combo([3, 3, 2, 1, 1], {4}))
+        # 只要 III：不能用 III 當材料，II+I+I = 12 只到 II -> 做不到；三個 II = 18 -> III
+        self.assertIsNone(shop.best_fuse_combo([3, 3, 2, 1, 1], {3}))
+        self.assertEqual((2, 3, 4), shop.best_fuse_combo([3, 3, 2, 2, 2], {3}))
+        self.assertIsNone(shop.best_fuse_combo([1, 1], {4}))
+        # IV 不會拿去合 IV
+        self.assertIsNone(shop.best_fuse_combo([4, 1], {4}))
+
+    def test_wanted_items(self):
+        from src.lc.shop import ShopItem, wanted_items
+        items = [ShopItem(0, None, None, None, '替换技能'), ShopItem(1, 1, '震颤', 153),
+                 ShopItem(2, 2, '沉沦', 207), ShopItem(3, 1, '充能', 161), ShopItem(4, 1, '沉沦', 156)]
+        self.assertEqual([2, 4], [i.index for i in wanted_items(items, ['沉沦'], [], 656)])
+        self.assertEqual([4], [i.index for i in wanted_items(items, ['沉沦'], [1], 656)])
+        self.assertEqual([1, 4], [i.index for i in wanted_items(items, [], [1], 160)])
+
+
+class GiftIconTest(unittest.TestCase):
+    def test_tier_bars(self):
+        frame = np.full((1440, 2560, 3), (30, 30, 30), np.uint8)
+        s = vision.GIFT_HALF * 1440
+        for n in range(3):   # III
+            x = int(1000 - 0.7 * s + n * 12)
+            frame[int(700 - 0.7 * s):int(700 - 0.3 * s), x:x + 5] = (40, 200, 240)
+        self.assertEqual(3, vision.gift_tier(frame, (1000, 700)))
+
+
 class KeywordsRegexTest(unittest.TestCase):
     def test_contains_and_ignores_case(self):
         pattern = vision.keywords_regex(['To Battle', '出击'])

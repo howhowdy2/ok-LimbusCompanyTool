@@ -16,6 +16,7 @@ from src.lc.layout import (PACK_DRAG_FROM_Y, PACK_DRAG_TO_Y, PACK_MODE_ARROW, PA
                            EVENT_OPTION_GAP, EVENT_SKIP_BTN, NODE_ENTER_BTN,
                            MAP_CENTER, MAP_ZOOM_SCROLLS, NODE_MATCH_THRESHOLD, NODE_TYPES, NODE_UNKNOWN)
 from src.tasks.LimbusBaseTask import TEMPLATE_DIR, LimbusBaseTask, TaskFailed
+from src.tasks.mirror_shop import SHOP_DEFAULTS, SHOP_DESCRIPTIONS, SHOP_TYPES, MirrorShopMixin
 
 IN_PROGRESS_CONTINUE = '繼續探索'
 IN_PROGRESS_ABORT = '終止探索 (放棄獎勵)'
@@ -57,7 +58,7 @@ def parse_grace_line(text: str):
     return None
 
 
-class MirrorDungeonTask(LimbusBaseTask):
+class MirrorDungeonTask(MirrorShopMixin, LimbusBaseTask):
     """鏡像迷宮 (目前做到「進入迷宮」為止，迷宮裡的流程之後再加)。
 
     主畫面 → Drive → 镜像迷宫 → 进入
@@ -145,6 +146,10 @@ class MirrorDungeonTask(LimbusBaseTask):
                         'Event Priority', 'Battle Timeout (s)'])
         for key in pack_keys:
             self.default_config[key] = self.default_config.pop(key)
+        # 商店設定放最後
+        self.default_config.update(SHOP_DEFAULTS)
+        self.config_type.update(SHOP_TYPES)
+        self.config_description.update(SHOP_DESCRIPTIONS)
 
     def run(self):
         self.open_mirror_dungeon()
@@ -180,6 +185,8 @@ class MirrorDungeonTask(LimbusBaseTask):
                 if self.fight_node() == 'defeat':
                     self.log_info('戰鬥失敗，停止', notify=True)
                     return
+            elif after == 'shop':
+                self.handle_shop()
             elif after in ('map', 'pack'):
                 continue
             else:
@@ -202,6 +209,8 @@ class MirrorDungeonTask(LimbusBaseTask):
                 return 'event'
             if include_battle and self.on_battle_team_screen():
                 return 'team'
+            if self.on_shop_screen():
+                return 'shop'
             confirm = self.ocr_roi('lower_half', TEXT['confirm'])
             if confirm:
                 self.click_box(confirm, after_sleep=2)
