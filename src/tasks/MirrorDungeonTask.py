@@ -7,7 +7,7 @@ from ok import Box
 from src.lc import packs as pack_data
 from src.lc import vision
 from src.lc.layout import (PACK_DRAG_FROM_Y, PACK_DRAG_TO_Y, PACK_MODE_ARROW, PACK_OBS_ICON_DX,
-                           PACK_OBS_ICON_Y, PACK_OBSERVE_BTN,
+                           PACK_OBS_ICON_Y, PACK_OBSERVE_BTN, PACK_REFRESH_BTN,
                            OBSERVE_COL_X0, OBSERVE_COL_DX, OBSERVE_ROW_DY, OBSERVE_ROW_DY0,
                            OBSERVE_TAB_X, OBSERVE_TAB_Y, OBSERVE_TYPES, OBSERVE_VISIBLE_BOTTOM,
                            GIFT_CARD_X, GIFT_CARD_Y, GIFT_KEYWORDS, GIFT_SCROLL_ARROW,
@@ -579,9 +579,24 @@ class MirrorDungeonTask(LimbusBaseTask):
         if bool(self.ocr_roi('pack_mode', TEXT['hard'])) == is_hard:
             self.log_warning('難度切換沒有反應 (可能已經不能切換了)')
 
-    def refreshes_left(self):
+    def read_refresh(self):
+        """讀右上「刷新 N/M」，讀不到回傳 None。"""
         found = vision.parse_fraction(''.join(b.name for b in self.ocr_roi('pack_refresh')))
-        return found[0] if found else 0
+        return found[0] if found else None
+
+    def refreshes_left(self, time_out: float = 10) -> int:
+        """剛進卡包畫面時右上角會先冒出一行小字擋住「刷新 N/M」，所以多等一下、重讀幾次。"""
+        start = time.time()
+        while True:
+            self.next_frame()
+            left = self.read_refresh()
+            if left is not None:
+                self.info_set('刷新次數', left)
+                return left
+            if time.time() - start > time_out:
+                self.log_warning('讀不到刷新次數，當作沒有刷新')
+                return 0
+            self.sleep(0.8)
 
     def drag_pack(self, box):
         x = self.pack_center_x(box)
@@ -608,6 +623,8 @@ class MirrorDungeonTask(LimbusBaseTask):
         self.wait_for(lambda: self.ocr_roi('pack_title', TEXT['pack_title']),
                       time_out=30, what='主題卡包選擇畫面')
         self.sleep(1.5)
+        # 等右上的小字消失、讀到「刷新 N/M」再開始
+        refreshes = self.refreshes_left(time_out=12)
         self.set_pack_difficulty()
         floor = self.pack_floor()
         want = self.pack_rules(pack_key(floor)) if floor in pack_data.FLOORS else []
@@ -623,9 +640,14 @@ class MirrorDungeonTask(LimbusBaseTask):
                 return self.drag_pack(best)
             if not want:
                 break
-            if self.config.get('Pack Use Refresh', True) and self.refreshes_left() > 0:
-                self.log_info('沒有想要的卡包，刷新')
-                self.click_box(self.ocr_roi('pack_refresh', TEXT['refresh']), after_sleep=2.5)
+            if self.config.get('Pack Use Refresh', True) and refreshes > 0:
+                self.log_info(f'沒有想要的卡包，刷新 (剩 {refreshes} 次)')
+                button = self.ocr_roi('pack_refresh', TEXT['refresh'])
+                if button:
+                    self.click_box(button, after_sleep=2.5)
+                else:
+                    self.click_relative(*PACK_REFRESH_BTN, after_sleep=2.5)
+                refreshes = self.refreshes_left(time_out=6)
                 continue
             break
 

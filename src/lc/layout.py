@@ -136,6 +136,7 @@ PACK_OBS_ICON_DX = 0.045         # 觀測後卡包右上角的 ↻ 在名稱中�
 PACK_OBS_ICON_Y = 0.305
 PACK_MODE_ARROW = (0.666, 0.064) # 難度切換箭頭
 PACK_OBSERVE_BTN = (0.163, 0.064)
+PACK_REFRESH_BTN = (0.835, 0.064)       # 右上「刷新」按鈕 (OCR 找不到字時用)
 
 
 # 「连续进行」下拉面板
