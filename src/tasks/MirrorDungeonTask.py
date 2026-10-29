@@ -13,6 +13,7 @@ from src.lc.layout import (PACK_DRAG_FROM_Y, PACK_DRAG_TO_Y, PACK_MODE_ARROW, PA
                            GIFT_CARD_X, GIFT_CARD_Y, GIFT_KEYWORDS, GIFT_SCROLL_ARROW,
                            GRACE_COL_X, GRACE_NAMES, GRACE_PLUS_DX, GRACE_PLUS_Y,
                            GRACE_PLUSPLUS_DX, GRACE_ROW_Y, TEXT,
+                           EVENT_OPTION_GAP, EVENT_SKIP_BTN, NODE_ENTER_BTN,
                            MAP_CENTER, MAP_ZOOM_SCROLLS, NODE_MATCH_THRESHOLD, NODE_TYPES, NODE_UNKNOWN)
 from src.tasks.LimbusBaseTask import TEMPLATE_DIR, LimbusBaseTask, TaskFailed
 
@@ -28,6 +29,8 @@ OBSERVE_SLOTS = 3
 MODE_KEEP, MODE_HARD, MODE_NORMAL = '不切換', '困难', '普通'
 NODE_DEFAULT = ['事件', '戰鬥', '異想體']
 UNKNOWN_NODE_DIR = Path('screenshots') / 'map_nodes'
+EVENT_LOG_DIR = Path('screenshots') / 'event_options'
+EVENT_DEFAULT = [vision.EVENT_GIFT, vision.EVENT_CHECK, vision.EVENT_OTHER, vision.EVENT_BATTLE]
 
 
 def pack_key(floor: int) -> str:
@@ -77,6 +80,7 @@ class MirrorDungeonTask(LimbusBaseTask):
             'Pack Use Refresh': True,
             'Pack Use Observe': False,
             'Node Priority': list(NODE_DEFAULT),
+            'Event Priority': list(EVENT_DEFAULT),
         })
         self.config_type['Pack Difficulty'] = {'type': 'drop_down',
                                                'options': [MODE_KEEP, MODE_HARD, MODE_NORMAL]}
@@ -98,6 +102,9 @@ class MirrorDungeonTask(LimbusBaseTask):
             'Node Priority': '樓層地圖上有好幾條路時，優先走哪種節點，一行一個，越上面越優先。'
                              '可用：' + '、'.join(list(NODE_TYPES) + [NODE_UNKNOWN])
                              + '。沒列到的排最後，一樣優先時走上面那條',
+            'Event Priority': '事件選項的優先順序，一行一個，看選項下面的小字分類：'
+                              + '、'.join(vision.EVENT_KINDS)
+                              + '。「其他」= 沒有小字或沒見過的 (會存到 screenshots/event_options 給你看)',
         })
         for slot in range(1, OBSERVE_SLOTS + 1):
             type_key, tier_key, index_key = observe_keys(slot)
@@ -132,7 +139,8 @@ class MirrorDungeonTask(LimbusBaseTask):
         })
         # 設定畫面照流程順序顯示：恩惠 → 饰品观测 → 卡包 (各層想要的 → 避開 → 刷新/觀測)
         pack_keys = (['Pack Difficulty'] + [pack_key(f) for f in pack_data.FLOORS]
-                     + ['Pack Avoid', 'Pack Use Refresh', 'Pack Use Observe', 'Node Priority'])
+                     + ['Pack Avoid', 'Pack Use Refresh', 'Pack Use Observe', 'Node Priority',
+                        'Event Priority'])
         for key in pack_keys:
             self.default_config[key] = self.default_config.pop(key)
 
@@ -148,7 +156,11 @@ class MirrorDungeonTask(LimbusBaseTask):
         self.observe_gifts()
         self.choose_pack()
         kind = self.choose_node()
-        self.log_info(f'已走向第一個節點 ({kind})，之後的流程尚未實作，請手動接手', notify=True)
+        self.enter_node()
+        if self.handle_event():
+            self.log_info('事件處理完了，之後的流程尚未實作，請手動接手', notify=True)
+        else:
+            self.log_info(f'已進入節點 ({kind})，之後的流程尚未實作，請手動接手', notify=True)
 
     # ---------- 進入 ----------
 
@@ -787,3 +799,80 @@ class MirrorDungeonTask(LimbusBaseTask):
         # 點節點中間的圖示 (外框下方有立體的邊，所以往上一點)
         self.click(node.x, int(node.y + node.size * vision.NODE_ICON_DY), after_sleep=2)
         return kind
+
+    def enter_node(self):
+        """點了節點後右邊會出現卡包名稱和「进入」。"""
+        button = self.wait_until(lambda: self.ocr_roi('node_enter', TEXT['enter']), time_out=6)
+        if button:
+            self.click_box(button, after_sleep=2)
+        else:
+            self.log_warning('沒看到「进入」，直接點它的位置')
+            self.click_relative(*NODE_ENTER_BTN, after_sleep=2)
+        for _ in range(3):   # 確認離開地圖了，沒有就再按一次
+            self.next_frame()
+            if not self.ocr_roi('node_enter', TEXT['enter']):
+                return
+            self.click_relative(*NODE_ENTER_BTN, after_sleep=2)
+        self.screenshot('fail_node_enter')
+        raise TaskFailed('按了「进入」還停在地圖上')
+
+    # ---------- 事件 ----------
+
+    def on_event_screen(self):
+        return self.ocr_roi('event_skip', TEXT['skip']) or self.ocr_roi('event_options_title',
+                                                                        TEXT['event_options_title'])
+
+    def event_options(self):
+        """回傳 [(要點的文字框, 全部文字, 類型)]，由上到下。"""
+        boxes = [b for b in self.ocr_roi('event_options') if b.name.strip()]
+        groups = vision.group_by_rows(boxes, lambda b: b.y, EVENT_OPTION_GAP * self.height)
+        result = []
+        for group in groups:
+            text = ' '.join(b.name.strip() for b in group)
+            result.append((group[0], text, vision.classify_event_option(text)))
+        return result
+
+    def log_unknown_option(self, text):
+        EVENT_LOG_DIR.mkdir(parents=True, exist_ok=True)
+        path = EVENT_LOG_DIR / 'options.txt'
+        seen = path.read_text(encoding='utf-8').splitlines() if path.is_file() else []
+        if text in seen:
+            return
+        with path.open('a', encoding='utf-8') as f:
+            f.write(text + '\n')
+        self.screenshot('event_option_new')
+        self.log_info(f'沒見過的事件選項，已記到 {path}：{text}')
+
+    def choose_event_option(self, options):
+        priority = [str(x).strip() for x in self.config.get('Event Priority', EVENT_DEFAULT) if str(x).strip()]
+        for _, text, kind in options:
+            if kind == vision.EVENT_OTHER:
+                self.log_unknown_option(text)
+        box, text, kind = min(options, key=lambda o: priority.index(o[2]) if o[2] in priority else len(priority))
+        self.log_info('事件選項：' + '、'.join(f'{t} [{k}]' for _, t, k in options) + f'，選擇：{text}')
+        self.info_set('事件選項', f'{kind}：{text}')
+        self.click_box(box, after_sleep=2)
+
+    def handle_event(self, time_out: float = 90) -> bool:
+        """事件：一直點 SKIP (沒亮也點) 直到出現「选项」，依優先順序選一個；
+        選完可能還有對話、下一輪選項或獲得饰品，一直處理到回到地圖。不是事件畫面回傳 False。"""
+        if not self.wait_until(self.on_event_screen, time_out=8):
+            return False
+        self.log_info('進入事件')
+        start = time.time()
+        while time.time() - start < time_out:
+            self.next_frame()
+            if self.on_map_screen():
+                self.log_info('事件結束，回到地圖')
+                return True
+            if self.handle_gift_popup():
+                continue
+            if self.ocr_roi('event_options_title', TEXT['event_options_title']):
+                options = self.event_options()
+                if options:
+                    self.choose_event_option(options)
+                    continue
+            # 還沒有選項：不管 SKIP 有沒有亮都點 (對話會一段一段跳過)
+            self.click_relative(*EVENT_SKIP_BTN, after_sleep=1)
+        self.screenshot('fail_event')
+        raise TaskFailed('事件處理超時 (可能是判定或戰鬥畫面，還沒做)，請把截圖給我')

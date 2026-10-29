@@ -199,6 +199,19 @@ class MapNodeTest(unittest.TestCase):
             self.assertEqual(name, vision.classify_node(noisy, templates)[0])
 
 
+class EventOptionTest(unittest.TestCase):
+    def test_classify(self):
+        self.assertEqual('獲得飾品', vision.classify_event_option('闭上双眼。 选择后，获得1件泛用E.G.O饰品'))
+        self.assertEqual('判定', vision.classify_event_option('伸出手 进行判定'))
+        self.assertEqual('戰鬥', vision.classify_event_option('拔刀 进入战斗'))
+        self.assertEqual('其他', vision.classify_event_option('还以对视。'))
+
+    def test_group_rows(self):
+        ys = [331, 369, 527]   # 第一個選項兩行字，第二個一行
+        groups = vision.group_by_rows(ys, lambda y: y, 0.07 * 1125)
+        self.assertEqual([[331, 369], [527]], groups)
+
+
 class KeywordsRegexTest(unittest.TestCase):
     def test_contains_and_ignores_case(self):
         pattern = vision.keywords_regex(['To Battle', '出击'])

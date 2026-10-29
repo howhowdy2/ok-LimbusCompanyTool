@@ -367,3 +367,33 @@ def classify_node(icon: np.ndarray, templates: dict) -> tuple[str | None, float]
         if score > best_score:
             best, best_score = name, score
     return best, best_score
+
+
+# ---------- 鏡像迷宮事件選項 ----------
+
+EVENT_GIFT, EVENT_CHECK, EVENT_BATTLE, EVENT_OTHER = '獲得飾品', '判定', '戰鬥', '其他'
+EVENT_KINDS = (EVENT_GIFT, EVENT_CHECK, EVENT_OTHER, EVENT_BATTLE)
+
+
+def classify_event_option(text: str) -> str:
+    """事件選項看下面那行小字：「选择后，获得1件泛用E.G.O饰品」-> 獲得飾品；有「判定」-> 判定；
+    有「战斗」-> 戰鬥；其他 (沒有小字、沒見過的) -> 其他。"""
+    text = normalize_name(text)
+    if '饰品' in text and ('获得' in text or '获取' in text):
+        return EVENT_GIFT
+    if '判定' in text:
+        return EVENT_CHECK
+    if '战斗' in text or '交战' in text:
+        return EVENT_BATTLE
+    return EVENT_OTHER
+
+
+def group_by_rows(items, key_y, gap: float):
+    """把 OCR 文字依 y 分組 (同一個選項框裡的大字和小字一組)，gap 是像素。"""
+    groups = []
+    for item in sorted(items, key=key_y):
+        if groups and key_y(item) - key_y(groups[-1][-1]) <= gap:
+            groups[-1].append(item)
+        else:
+            groups.append([item])
+    return groups

@@ -89,6 +89,10 @@ ROI = {
     'pack_obs_ok': (0.53, 0.76, 0.71, 0.85),       # 觀測視窗「确认」
     'pack_replace': (0.33, 0.33, 0.67, 0.42),      # 「主题卡包"A"将被"B"替换。」(確認按鈕用 md_popup_btn)
     'map_title': (0.02, 0.11, 0.22, 0.18),         # 樓層地圖左上「正在探索第1层」
+    'node_enter': (0.80, 0.69, 0.97, 0.82),        # 點節點後右下的「进入」
+    'event_skip': (0.80, 0.84, 0.97, 0.95),        # 事件畫面右下「SKIP」
+    'event_options_title': (0.52, 0.13, 0.70, 0.23),   # 「选项」
+    'event_options': (0.54, 0.22, 0.92, 0.85),     # 選項框 (一個選項 = 大字 + 下面的小字)
     # 戰鬥中右下角的「胜率 / 伤害」按鈕 (行動槽變多時會往右移，範圍抓寬一點)
     'battle_hud': (0.72, 0.71, 0.90, 0.85),
     # 結算畫面 (战斗胜利)
@@ -164,6 +168,9 @@ NODE_TYPES = {
     '頭目': 'map_boss',
 }
 NODE_UNKNOWN = '未知'
+NODE_ENTER_BTN = (0.885, 0.754)     # 「进入」(OCR 找不到時點這裡)
+EVENT_SKIP_BTN = (0.885, 0.898)     # 「SKIP」(沒亮也照點，點到出現選項)
+EVENT_OPTION_GAP = 0.07             # 同一個選項框裡兩行字的最大間距 (畫面高度比例)
 NODE_MATCH_THRESHOLD = 0.6
 
 
@@ -208,6 +215,8 @@ TEXT = {
     'enter': ['Enter', '进入'],
     'pack_replace': ['替换', 'replace'],
     'map_title': ['正在探索', 'Exploring'],
+    'skip': ['SKIP', 'Skip'],
+    'event_options_title': ['选项', 'Choices', 'Options'],
     'victory': ['Victory', '胜利'],
     'defeat': ['Defeat', '失败'],
 }
