@@ -37,6 +37,8 @@ ROI = {
     'lux_skip': (0.22, 0.685, 0.98, 0.745),        # 每張關卡卡片的「跳过战斗」
     'lux_repeat': (0.22, 0.31, 0.98, 0.39),       # 每張關卡卡片的「连续进行×N」
     'lux_modules': (0.215, 0.865, 0.265, 0.912),   # 左下角腦啡肽模組數量
+    # 戰鬥中右下角的「胜率 / 伤害」按鈕 (行動槽變多時會往右移，範圍抓寬一點)
+    'battle_hud': (0.72, 0.71, 0.90, 0.85),
     # 結算畫面 (战斗胜利)
     'result_title': (0.65, 0.10, 0.98, 0.26),
     'result_confirm': (0.80, 0.72, 0.97, 0.86),
@@ -58,6 +60,7 @@ TEXT = {
     'lux_repeat': ['Repeat', '连续进行'],
     'enk_owned': ['拥有', 'Own'],
     'not_enough': ['不足', 'Not enough', 'Insufficient'],
+    'win_rate': ['Win Rate', 'WinRate', '胜率'],
     'victory': ['Victory', '胜利'],
     'defeat': ['Defeat', '失败'],
 }

@@ -32,7 +32,7 @@ class ExpLuxcavationTask(LimbusBaseTask):
             'Mode': MODE_SKIP,
             'Runs': 1,
             'Stage': STAGE_OPTIONS[0],
-            'Battle Timeout (s)': 300,
+            'Battle Timeout (s)': 400,
         })
         self.config_type.update({
             'Mode': {'type': 'drop_down', 'options': [MODE_SKIP, MODE_BATTLE]},
@@ -42,7 +42,7 @@ class ExpLuxcavationTask(LimbusBaseTask):
             'Mode': '跳過戰鬥：花較多模組直接拿獎勵，最穩定\n進入戰鬥：用上次的編隊自動打',
             'Runs': '要打幾次 (用遊戲的「连续进行」一次設定好)',
             'Stage': '打畫面上哪一張關卡卡片',
-            'Battle Timeout (s)': '進入戰鬥模式下，一場最多等幾秒',
+            'Battle Timeout (s)': '進入戰鬥模式下，一場最多等幾秒 (连续进行 N 次就等 N 倍)',
         })
 
     def run(self):
@@ -185,12 +185,19 @@ class ExpLuxcavationTask(LimbusBaseTask):
             self.click_pos('to_battle', after_sleep=3)
         self.fight()
 
+    def in_input_phase(self):
+        """右下角看得到「胜率 / 伤害」按鈕 = 等玩家下指令的階段。
+
+        行動槽變多時這兩個按鈕會往右移，所以用 OCR 在一塊較寬的範圍裡找字。
+        """
+        return bool(self.ocr_roi('battle_hud', TEXT['win_rate']))
+
     def fight(self):
-        """每隔一段時間按 P(勝率) 和 Enter(開戰)，直到回到關卡列表。
+        """只在出指令階段按 P(勝率) + Enter(開戰)，演出動畫時不按鍵，直到回到關卡列表。
 
         连续进行 > 1 時會一場接一場打，全部打完才會回到列表。
         """
-        timeout = self.config.get('Battle Timeout (s)', 300) * max(1, self.config.get('Runs', 1))
+        timeout = self.config.get('Battle Timeout (s)', 400) * max(1, self.config.get('Runs', 1))
         start = time.time()
         while time.time() - start < timeout:
             self.next_frame()
@@ -199,11 +206,15 @@ class ExpLuxcavationTask(LimbusBaseTask):
                 return
             if self.handle_result_screen():
                 continue
+            if self.in_input_phase():
+                self.send_key('p', after_sleep=0.5)
+                self.send_key('enter', after_sleep=3)
+                self.info_incr('回合')
+                continue
             confirm = self.ocr_roi('lower_half', TEXT['confirm'])
             if confirm:
                 self.click_box(confirm, after_sleep=2)
                 continue
-            self.send_key('p', after_sleep=0.3)
-            self.send_key('enter', after_sleep=2)
+            self.sleep(1)  # 戰鬥演出中，等一下再看
         self.screenshot('fail_battle_timeout')
         raise TaskFailed(f'戰鬥超過 {timeout} 秒沒結束')
