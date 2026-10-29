@@ -115,6 +115,22 @@ class ParseNumberTest(unittest.TestCase):
         self.assertIsNone(vision.parse_stylized_int('本'))
 
 
+class TierBandTest(unittest.TestCase):
+    def test_finds_blue_bands_top_to_bottom(self):
+        frame = np.full((1080, 1920, 3), (20, 22, 26), np.uint8)
+        for top in (378, 678, 858):           # 三條藍色分隔條，高 36px
+            frame[top:top + 36, :] = (85, 38, 25)
+        bands = vision.find_tier_bands(frame)
+        self.assertEqual(3, len(bands))
+        for expected, actual in zip((396, 696, 876), bands):
+            self.assertAlmostEqual(expected / 1080, actual, delta=0.003)
+
+    def test_ignores_thin_lines(self):
+        frame = np.full((1080, 1920, 3), (20, 22, 26), np.uint8)
+        frame[500:505, :] = (85, 38, 25)
+        self.assertEqual([], vision.find_tier_bands(frame))
+
+
 class KeywordsRegexTest(unittest.TestCase):
     def test_contains_and_ignores_case(self):
         pattern = vision.keywords_regex(['To Battle', '出击'])

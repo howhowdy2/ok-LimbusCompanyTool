@@ -73,6 +73,13 @@ ROI = {
     'gift_got_title': (0.38, 0.21, 0.62, 0.29),    # 「获得E.G.O饰品!」
     'gift_got_name': (0.25, 0.56, 0.39, 0.68),     # 橘色框裡的饰品名稱
     'gift_got_ok': (0.42, 0.70, 0.58, 0.78),       # 「确认」
+    # 鏡像迷宮：E.G.O饰品观测
+    'observe_title': (0.09, 0.02, 0.30, 0.10),     # 「E.G.O饰品观测」
+    'observe_count': (0.86, 0.765, 0.91, 0.83),    # 「选择 0/3」的數字
+    'observe_select': (0.81, 0.765, 0.88, 0.83),   # 「选择」
+    'observe_reject': (0.67, 0.765, 0.77, 0.83),   # 「拒绝饰品」
+    # 鏡像迷宮：主題卡包
+    'pack_title': (0.38, 0.11, 0.62, 0.20),        # 「选择1层主题卡包」
     # 戰鬥中右下角的「胜率 / 伤害」按鈕 (行動槽變多時會往右移，範圍抓寬一點)
     'battle_hud': (0.72, 0.71, 0.90, 0.85),
     # 結算畫面 (战斗胜利)
@@ -100,6 +107,17 @@ GIFT_KEYWORDS = ['烧伤', '流血', '震颤', '破裂', '沉沦', '呼吸法', 
 GIFT_CARD_X = 0.79                                  # 右邊三個饰品卡片的中心
 GIFT_CARD_Y = (0.37, 0.52, 0.67)
 GIFT_SCROLL_ARROW = (0.341, 0.826)                  # 左邊清單下方的 ▼
+
+
+# E.G.O饰品观测：上面 11 個分頁，左邊清單依 III / II / I 分區，每列 8 個
+OBSERVE_TYPES = GIFT_KEYWORDS + ['泛用']
+OBSERVE_TAB_X = (0.088, 0.137, 0.186, 0.234, 0.282, 0.331, 0.379, 0.428, 0.476, 0.524, 0.573)
+OBSERVE_TAB_Y = 0.262
+OBSERVE_COL_X0 = 0.1025          # 第 1 欄饰品中心
+OBSERVE_COL_DX = 0.065           # 每欄間距
+OBSERVE_ROW_DY0 = 0.086          # 等級分隔條中心 → 第 1 列饰品中心
+OBSERVE_ROW_DY = 0.110           # 每列間距
+OBSERVE_VISIBLE_BOTTOM = 0.80    # 饰品中心超過這裡就要往下捲
 
 
 # 「连续进行」下拉面板
@@ -144,6 +162,9 @@ TEXT = {
     'gift_title': ['E.G.O', '饰品'],
     'gift_got': ['获得', 'Acquired'],
     'select': ['Select', '选择'],
+    'reject': ['Refuse', '拒绝'],
+    'observe_title': ['Observation', '观测'],
+    'pack_title': ['Theme Pack', '主题卡包'],
     'enter': ['Enter', '进入'],
     'victory': ['Victory', '胜利'],
     'defeat': ['Defeat', '失败'],

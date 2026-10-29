@@ -1,7 +1,9 @@
 import time
 
 from src.lc import vision
-from src.lc.layout import (GIFT_CARD_X, GIFT_CARD_Y, GIFT_KEYWORDS, GIFT_SCROLL_ARROW,
+from src.lc.layout import (OBSERVE_COL_X0, OBSERVE_COL_DX, OBSERVE_ROW_DY, OBSERVE_ROW_DY0,
+                           OBSERVE_TAB_X, OBSERVE_TAB_Y, OBSERVE_TYPES, OBSERVE_VISIBLE_BOTTOM,
+                           GIFT_CARD_X, GIFT_CARD_Y, GIFT_KEYWORDS, GIFT_SCROLL_ARROW,
                            GRACE_COL_X, GRACE_NAMES, GRACE_PLUS_DX, GRACE_PLUS_Y,
                            GRACE_PLUSPLUS_DX, GRACE_ROW_Y, TEXT)
 from src.tasks.LimbusBaseTask import LimbusBaseTask, TaskFailed
@@ -37,6 +39,7 @@ class MirrorDungeonTask(LimbusBaseTask):
             'If In Progress': IN_PROGRESS_CONTINUE,
             'Gift Keyword': '呼吸法',
             'Gift Picks': ['1'],
+            'Observe Gifts': [],
         })
         for i in range(len(GRACE_NAMES)):
             self.default_config[grace_key(i)] = '0 級' if i + 1 in GRACE_DEFAULT_ON else GRACE_OFF
@@ -54,6 +57,9 @@ class MirrorDungeonTask(LimbusBaseTask):
             'Gift Keyword': '開局選 E.G.O 饰品時，左邊要選哪一種關鍵字',
             'Gift Picks': '右邊三個饰品要選哪幾個 (由上到下 1~3)。'
                           '實際能選幾個看畫面「选择 0/N」，超過的會依序略過',
+            'Observe Gifts': 'E.G.O饰品观测 要選的饰品，最多 3 個，一行一個，格式「類型 等級 第幾個」，'
+                             '例如「烧伤 3 1」= 烧伤分頁 III 級的第 1 個 (每列 8 個，第 9 個是第二列第 1 個)。'
+                             '類型：' + ' '.join(OBSERVE_TYPES) + '。留空 = 拒绝饰品 (不花星芒)',
         })
 
     def run(self):
@@ -65,7 +71,8 @@ class MirrorDungeonTask(LimbusBaseTask):
         self.confirm_team()
         self.choose_graces()
         self.choose_start_gifts()
-        self.log_info('已選好恩惠和開局饰品 (之後的流程尚未實作，請手動接手)', notify=True)
+        self.observe_gifts()
+        self.log_info('已到主題卡包選擇 (之後的流程尚未實作，請手動接手)', notify=True)
 
     # ---------- 進入 ----------
 
@@ -250,9 +257,13 @@ class MirrorDungeonTask(LimbusBaseTask):
             else:
                 y = GRACE_ROW_Y[row]
             self.click_relative(x, y, after_sleep=1.2)
-            popup = self.wait_until(self.grace_popup, time_out=4)
+            # 「+」「++」直接選好，不會跳視窗；0 級 (點卡片) 才會問「要选择此效果吗?」
+            popup = self.wait_until(self.grace_popup, time_out=4 if level == '0 級' else 1)
             if not popup:
-                self.log_warning(f'點了恩惠 {i + 1} {name} ({level}) 沒有跳出確認視窗，略過')
+                if level == '0 級':
+                    self.log_warning(f'點了恩惠 {i + 1} {name} 沒有跳出確認視窗，略過')
+                else:
+                    chosen.append(f'{i + 1}.{name}({level})')
                 continue
             if self.ocr_roi('center', DANGER_TEXT):
                 self.log_warning(f'恩惠 {i + 1} {name}：星芒不足，取消')
@@ -354,3 +365,113 @@ class MirrorDungeonTask(LimbusBaseTask):
         self.info_set('獲得饰品', '、'.join(gifts) or '無')
         if not seen_any:
             self.log_warning('按了「选择」後沒有看到「获得E.G.O饰品」')
+
+    # ---------- E.G.O饰品观测 ----------
+
+    def on_observe_screen(self):
+        return self.ocr_roi('observe_title', TEXT['observe_title'])
+
+    def observe_count(self):
+        return vision.parse_fraction(''.join(b.name for b in self.ocr_roi('observe_count')))
+
+    def tier_bands(self):
+        return vision.find_tier_bands(self.frame)
+
+    @staticmethod
+    def parse_observe_pick(text):
+        """「烧伤 3 1」-> ('烧伤', 3, 1)；格式不對回傳 None。"""
+        parts = text.replace(',', ' ').replace('-', ' ').split()
+        if len(parts) != 3 or parts[0] not in OBSERVE_TYPES:
+            return None
+        tier = {'III': 3, 'II': 2, 'I': 1}.get(parts[1].upper(), None)
+        try:
+            tier = tier or int(parts[1])
+            index = int(parts[2])
+        except ValueError:
+            return None
+        if tier not in (1, 2, 3) or index < 1:
+            return None
+        return parts[0], tier, index
+
+    def open_observe_tab(self, kind):
+        i = OBSERVE_TYPES.index(kind)
+        self.click_relative(OBSERVE_TAB_X[i], OBSERVE_TAB_Y, after_sleep=1.2)
+        self.next_frame()
+
+    def gift_point(self, tier, index):
+        """算出某等級第 index 個饰品的位置 (相對座標)；需要的話往下捲。回傳 None = 找不到。"""
+        row, col = (index - 1) // 8, (index - 1) % 8
+        x = OBSERVE_COL_X0 + col * OBSERVE_COL_DX
+        bands = self.tier_bands()   # 由上到下：III、II、I
+        order = 3 - tier            # 從上面數第幾條
+        if order < len(bands):
+            y = bands[order] + OBSERVE_ROW_DY0 + row * OBSERVE_ROW_DY
+            if y <= OBSERVE_VISIBLE_BOTTOM:
+                return x, y
+        # 往下捲到底，從下面數：I 是最後一條
+        self.scroll_relative(0.35, 0.6, -15)
+        self.sleep(1)
+        self.next_frame()
+        bands = self.tier_bands()
+        back = tier            # I = 倒數第 1 條、II = 倒數第 2 條 …
+        if back <= len(bands):
+            y = bands[-back] + OBSERVE_ROW_DY0 + row * OBSERVE_ROW_DY
+            if y <= OBSERVE_VISIBLE_BOTTOM:
+                return x, y
+        return None
+
+    def observe_gifts(self):
+        self.wait_for(self.on_observe_screen, time_out=20, what='E.G.O饰品观测畫面')
+        self.sleep(1)
+        picks = []
+        for line in self.config.get('Observe Gifts', [])[:3]:
+            parsed = self.parse_observe_pick(str(line))
+            if parsed is None:
+                self.log_warning(f'看不懂饰品观测設定「{line}」，格式要像「烧伤 3 1」')
+            else:
+                picks.append(parsed)
+
+        if not picks:
+            self.log_info('沒有設定要觀測的饰品，拒绝饰品')
+            self.click_box(self.wait_for(lambda: self.ocr_roi('observe_reject', TEXT['reject']),
+                                         time_out=5, what='「拒绝饰品」'), after_sleep=1.5)
+        else:
+            chosen = 0
+            for kind, tier, index in picks:
+                self.open_observe_tab(kind)
+                point = self.gift_point(tier, index)
+                label = f'{kind} {"I" * tier} 第{index}個'
+                if point is None:
+                    self.log_warning(f'找不到 {label}，略過')
+                    continue
+                before = self.observe_count()
+                self.click_relative(*point, after_sleep=1)
+                self.next_frame()
+                after = self.observe_count()
+                if before and after and after[0] <= before[0]:
+                    self.log_warning(f'{label} 點了沒有選上 (可能已拥有或位置是空的)')
+                    continue
+                chosen += 1
+                self.log_info(f'观测：選了 {label}')
+            self.info_set('饰品观测', f'選了 {chosen} 個')
+            button = self.wait_for(lambda: self.ocr_roi('observe_select', TEXT['select']),
+                                   time_out=5, what='观测的「选择」')
+            if chosen == 0:
+                self.log_info('一個都沒選上，改按拒绝饰品')
+                button = self.ocr_roi('observe_reject', TEXT['reject']) or button
+            self.click_box(button, after_sleep=1.5)
+
+        # 「是否要消耗N星芒以进行E.G.O饰品观测?」或拒絕的確認
+        start = time.time()
+        while time.time() - start < 15:
+            self.next_frame()
+            if self.ocr_roi('pack_title', TEXT['pack_title']):
+                self.info_set('進度', '主題卡包選擇')
+                return
+            ok = self.ocr_roi('md_popup_btn', TEXT['confirm'])
+            if ok:
+                self.click_box(ok, after_sleep=2)
+                continue
+            self.sleep(1)
+        self.screenshot('fail_observe')
+        raise TaskFailed('饰品观测之後沒有進到主題卡包選擇')

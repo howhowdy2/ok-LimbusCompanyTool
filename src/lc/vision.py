@@ -153,6 +153,28 @@ def find_bright_blob(frame: np.ndarray, box_px, min_value: int = 200,
     return left + int(cx), top + int(cy)
 
 
+def find_tier_bands(frame: np.ndarray, x_range=(0.35, 0.45), y_range=(0.30, 0.90),
+                    min_height: float = 0.018) -> list[float]:
+    """E.G.O饰品观测：找出 III / II / I 那幾條藍色分隔條的中心 y (相對座標，由上到下)。
+
+    分隔條是一整條偏藍的橫帶 (B 明顯大於 R)，在饰品還沒排到的欄位取樣就不會被圖示干擾。
+    """
+    height, width = frame.shape[:2]
+    x0, x1 = int(x_range[0] * width), int(x_range[1] * width)
+    y0, y1 = int(y_range[0] * height), int(y_range[1] * height)
+    strip = frame[y0:y1, x0:x1, :3].astype(np.int32).mean(axis=1)   # 每一列的平均 BGR
+    blue = (strip[:, 0] > 60) & (strip[:, 0] > strip[:, 2] * 2.2) & (strip[:, 0] > strip[:, 1] * 1.6)
+    bands, start = [], None
+    for i, flag in enumerate(list(blue) + [False]):
+        if flag and start is None:
+            start = i
+        elif not flag and start is not None:
+            if (i - start) / height >= min_height:
+                bands.append((y0 + (start + i - 1) / 2) / height)
+            start = None
+    return bands
+
+
 def parse_fraction(text: str) -> tuple[int, int] | None:
     """'0/3' -> (0, 3)；讀不到回傳 None。"""
     found = _ENKEPHALIN.search((text or '').replace(' ', ''))
