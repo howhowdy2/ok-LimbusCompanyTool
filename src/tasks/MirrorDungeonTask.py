@@ -11,7 +11,7 @@ from src.tasks.LimbusBaseTask import LimbusBaseTask, TaskFailed
 IN_PROGRESS_CONTINUE = '繼續探索'
 IN_PROGRESS_ABORT = '終止探索 (放棄獎勵)'
 
-GRACE_LEVELS = ['0', '+', '++']
+GRACE_LEVELS = ['0', '1', '2']   # 1 = 卡片下的「+」，2 = 「++」
 GRACE_DEFAULT = ['1 0', '3 0', '5 0']   # 預設選 1、3、5，0 級
 GIFT_PICK_OPTIONS = ['1', '2', '3']
 OBSERVE_OFF = '不選'
@@ -24,13 +24,12 @@ def observe_keys(slot: int):
 
 
 def parse_grace_line(text: str):
-    """「1 +」「起始之星 ++」「3」-> (index 0~9, '0' / '+' / '++')；看不懂回傳 None。"""
+    """「1 1」「起始之星 2」「3」-> (index 0~9, '0' / '1' / '2')；+ / ++ 也接受。看不懂回傳 None。"""
     parts = str(text).replace('：', ' ').replace(':', ' ').split()
     if not parts:
         return None
     head, level = parts[0], (parts[1] if len(parts) > 1 else '0')
-    if level in ('0級', '0 級', '無'):
-        level = '0'
+    level = {'0級': '0', '0 級': '0', '無': '0', '+': '1', '++': '2'}.get(level, level)
     if level not in GRACE_LEVELS:
         return None
     if head.isdigit() and 1 <= int(head) <= len(GRACE_NAMES):
@@ -86,8 +85,8 @@ class MirrorDungeonTask(LimbusBaseTask):
             'Gift Keyword': '開局選 E.G.O 饰品時，左邊要選哪一種關鍵字',
             'Gift Picks': '右邊三個饰品要選哪幾個 (由上到下 1~3)。'
                           '實際能選幾個看畫面「选择 0/N」，超過的會依序略過',
-            'Graces': '要選的星之恩惠，一行一個，格式「編號 等級」，等級是 0 / + / ++，'
-                      '例如「1 0」「2 ++」，編號也可以寫名稱「起始之星 +」。編號 (由左到右、上到下)：'
+            'Graces': '要選的星之恩惠，一行一個，格式「編號 等級」，等級是 0 / 1 / 2 (1 = +，2 = ++)，'
+                      '例如「1 0」「2 2」，編號也可以寫名稱「起始之星 1」。編號 (由左到右、上到下)：'
                       + '、'.join(f'{i + 1}.{n}' for i, n in enumerate(GRACE_NAMES)),
         })
 
@@ -276,15 +275,15 @@ class MirrorDungeonTask(LimbusBaseTask):
         for line in self.config.get('Graces', []):
             parsed = parse_grace_line(line)
             if parsed is None:
-                self.log_warning(f'看不懂恩惠設定「{line}」，格式要像「1 0」或「2 ++」')
+                self.log_warning(f'看不懂恩惠設定「{line}」，格式要像「1 0」或「2 2」')
                 continue
             i, level = parsed
             name = GRACE_NAMES[i]
             col, row = i % 5, i // 5
             x = GRACE_COL_X[col]
-            if level == '+':
+            if level == '1':
                 x, y = x + GRACE_PLUS_DX, GRACE_PLUS_Y[row]
-            elif level == '++':
+            elif level == '2':
                 x, y = x + GRACE_PLUSPLUS_DX, GRACE_PLUS_Y[row]
             else:
                 y = GRACE_ROW_Y[row]
@@ -300,6 +299,8 @@ class MirrorDungeonTask(LimbusBaseTask):
         start = time.time()
         while time.time() - start < 15:
             self.next_frame()
+            if self.handle_gift_popup():
+                continue
             if self.on_gift_screen():
                 return
             if self.grace_popup():
@@ -366,29 +367,36 @@ class MirrorDungeonTask(LimbusBaseTask):
         self.click_box(button, after_sleep=2)
         self.collect_gift_popups()
 
+    def handle_gift_popup(self) -> bool:
+        """畫面上有「获得E.G.O饰品!」就記下名稱、按确认，回傳 True。任何時候出現都用這個處理。"""
+        if not self.ocr_roi('gift_got_title', TEXT['gift_got']):
+            return False
+        name = ''.join(b.name for b in self.ocr_roi('gift_got_name')).strip() or '(讀不到名稱)'
+        gifts = getattr(self, 'acquired_gifts', None)
+        if gifts is None:
+            gifts = self.acquired_gifts = []
+        gifts.append(name)
+        self.log_info(f'獲得 E.G.O 饰品：{name}')
+        self.info_set('獲得饰品', '、'.join(gifts))
+        ok = self.ocr_roi('gift_got_ok', TEXT['confirm'])
+        if ok:
+            self.click_box(ok, after_sleep=1.5)
+        else:
+            self.click_relative(0.5, 0.741, after_sleep=1.5)
+        return True
+
     def collect_gift_popups(self, timeout: float = 15):
-        """「获得E.G.O饰品!」：記下名稱，按确认，直到不再出現。"""
-        gifts = getattr(self, 'acquired_gifts', [])
+        """按了「选择」之後，把接連出現的「获得E.G.O饰品!」都按掉。"""
         start = time.time()
         seen_any = False
         while time.time() - start < timeout:
             self.next_frame()
-            if self.ocr_roi('gift_got_title', TEXT['gift_got']):
-                name = ''.join(b.name for b in self.ocr_roi('gift_got_name')).strip() or '(讀不到名稱)'
-                gifts.append(name)
-                self.log_info(f'獲得 E.G.O 饰品：{name}')
-                ok = self.ocr_roi('gift_got_ok', TEXT['confirm'])
-                if ok:
-                    self.click_box(ok, after_sleep=1.5)
-                else:
-                    self.click_relative(0.5, 0.741, after_sleep=1.5)
+            if self.handle_gift_popup():
                 seen_any = True
                 continue
             if seen_any:
                 break
             self.sleep(0.5)
-        self.acquired_gifts = gifts
-        self.info_set('獲得饰品', '、'.join(gifts) or '無')
         if not seen_any:
             self.log_warning('按了「选择」後沒有看到「获得E.G.O饰品」')
 
@@ -473,11 +481,13 @@ class MirrorDungeonTask(LimbusBaseTask):
 
         # 「是否要消耗N星芒以进行E.G.O饰品观测?」或拒絕的確認
         start = time.time()
-        while time.time() - start < 15:
+        while time.time() - start < 30:
             self.next_frame()
             if self.ocr_roi('pack_title', TEXT['pack_title']):
                 self.info_set('進度', '主題卡包選擇')
                 return
+            if self.handle_gift_popup():
+                continue
             ok = self.ocr_roi('md_popup_btn', TEXT['confirm'])
             if ok:
                 self.click_box(ok, after_sleep=2)
