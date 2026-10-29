@@ -143,6 +143,26 @@ class PackRuleTest(unittest.TestCase):
         self.assertEqual(0, vision.rule_matches(rules, 2, '自动工厂'))
         self.assertIsNone(vision.rule_matches(rules, 1, '被遗忘者们'))
 
+    def test_reprint_is_a_different_pack(self):
+        rules = [vision.parse_pack_rule('20区的奇迹')]
+        self.assertIsNone(vision.rule_matches(rules, 4, '20区的奇迹 复刻'))
+        self.assertEqual(0, vision.rule_matches(rules, 4, '20区的奇'))   # OCR 少一個字
+
+    def test_punctuation_ignored(self):
+        rules = [vision.parse_pack_rule('巢、工坊、技术')]
+        self.assertEqual(0, vision.rule_matches(rules, 1, '巢，工坊，技术'))
+
+
+class PackDataTest(unittest.TestCase):
+    def test_floors(self):
+        from src.lc import packs
+        data = packs.load_packs()
+        self.assertEqual({'normal': (1, 2), 'hard': (1,)}, data['巢、工坊、技术'])
+        self.assertEqual((), data['心意相悖']['normal'])
+        self.assertIn('无法去爱', packs.packs_on_floor(1))
+        self.assertNotIn('心意相悖', packs.packs_on_floor(5, hard=False))
+        self.assertIn('心意相悖', packs.packs_on_floor(5, hard=True))
+
 
 class KeywordsRegexTest(unittest.TestCase):
     def test_contains_and_ignores_case(self):

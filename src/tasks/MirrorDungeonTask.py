@@ -1,5 +1,6 @@
 import time
 
+from src.lc import packs as pack_data
 from src.lc import vision
 from src.lc.layout import (PACK_DRAG_FROM_Y, PACK_DRAG_TO_Y, PACK_MODE_ARROW, PACK_OBS_ICON_DX,
                            PACK_OBS_ICON_Y, PACK_OBSERVE_BTN,
@@ -20,6 +21,10 @@ OBSERVE_OFF = '不選'
 OBSERVE_TIERS = ['III', 'II', 'I']
 OBSERVE_SLOTS = 3
 MODE_KEEP, MODE_HARD, MODE_NORMAL = '不切換', '困难', '普通'
+
+
+def pack_key(floor: int) -> str:
+    return f'Pack Priority {floor}F'
 
 
 def observe_keys(slot: int):
@@ -61,16 +66,27 @@ class MirrorDungeonTask(LimbusBaseTask):
             'Gift Picks': ['1'],
             'Graces': list(GRACE_DEFAULT),
             'Pack Difficulty': MODE_KEEP,
-            'Pack Priority': [],
             'Pack Avoid': [],
             'Pack Use Refresh': True,
             'Pack Use Observe': False,
         })
         self.config_type['Pack Difficulty'] = {'type': 'drop_down',
                                                'options': [MODE_KEEP, MODE_HARD, MODE_NORMAL]}
+        # 每一層一個「想要的卡包」清單，只能從那一層會出現的卡包裡選 (資料：assets/lc/mirror_packs.csv)
+        for floor in pack_data.FLOORS:
+            key = pack_key(floor)
+            self.default_config[key] = []
+            self.config_type[key] = {'type': 'drop_down',
+                                     'options_available': pack_data.packs_on_floor(floor)}
+            self.config_description[key] = (f'第 {floor} 層想要的主題卡包，越上面越優先 '
+                                            f'(只列出第 {floor} 層普通或困難會出現的卡包)')
+        self.config_type['Pack Avoid'] = {'type': 'drop_down',
+                                          'options_available': pack_data.all_packs()}
+        # 設定畫面照這個順序顯示：各層想要的卡包排在避開清單和刷新/觀測前面
+        for key in ('Pack Avoid', 'Pack Use Refresh', 'Pack Use Observe'):
+            self.default_config[key] = self.default_config.pop(key)
         self.config_description.update({
             'Pack Difficulty': '卡包畫面右上的難度 (還沒通關困難卡包前可以切換)',
-            'Pack Priority': '想要的主題卡包，一行一個，越上面越優先。寫「2:自动工厂」= 只在第 2 層找',
             'Pack Avoid': '不要的卡包，都沒有想要的卡包時會避開這些，也會優先把它們換掉',
             'Pack Use Refresh': '畫面上沒有想要的卡包時，用右上「刷新」(用完為止)',
             'Pack Use Observe': '刷新用完還是沒有時，用「主题卡包观测」把一個卡包換成想要的 (可能花星芒)',
@@ -580,7 +596,9 @@ class MirrorDungeonTask(LimbusBaseTask):
         self.sleep(1.5)
         self.set_pack_difficulty()
         floor = self.pack_floor()
-        want, avoid = self.pack_rules('Pack Priority'), self.pack_rules('Pack Avoid')
+        want = self.pack_rules(pack_key(floor)) if floor in pack_data.FLOORS else []
+        avoid = self.pack_rules('Pack Avoid')
+        self.info_set('樓層', f'{floor}F，想要：' + ('、'.join(self.config.get(pack_key(floor), [])) or '無'))
 
         for _ in range(10):
             self.next_frame()

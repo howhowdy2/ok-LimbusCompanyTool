@@ -227,7 +227,7 @@ except Exception:  # noqa: BLE001
 
 def normalize_name(text: str) -> str:
     """名稱比對用：去掉空白和標點、繁轉簡。"""
-    text = re.sub(r'[\s·・\-—_:：,，。.!！?？]', '', text or '')
+    text = re.sub(r'[\s·・\-—_:：,，、。.!！?？]', '', text or '')
     return _T2S.convert(text) if _T2S else text
 
 
@@ -240,15 +240,23 @@ def parse_pack_rule(line: str):
     return None, normalize_name(line)
 
 
+def names_match(a: str, b: str) -> bool:
+    """名稱相同，或 OCR 多/少讀了一個字也算 (但「20区的奇迹」和「20区的奇迹 复刻」不算)。"""
+    if not a or not b:
+        return False
+    if a == b:
+        return True
+    short, long = sorted((a, b), key=len)
+    return len(long) - len(short) <= 1 and short in long
+
+
 def rule_matches(rules, floor, name) -> int | None:
     """name 符合第幾條規則 (越小越優先)，都不符合回傳 None。"""
     target = normalize_name(name)
-    if not target:
-        return None
     for i, (rule_floor, rule_name) in enumerate(rules):
         if rule_floor is not None and rule_floor != floor:
             continue
-        if rule_name and (rule_name in target or target in rule_name):
+        if names_match(rule_name, target):
             return i
     return None
 
