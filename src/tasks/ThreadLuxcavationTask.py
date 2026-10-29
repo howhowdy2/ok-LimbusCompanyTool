@@ -6,15 +6,16 @@ from src.tasks.ExpLuxcavationTask import LEVEL_OPTIONS, LuxcavationTask
 
 
 class ThreadLuxcavationTask(LuxcavationTask):
-    """纺锤本：每天只開一個罪孽的關卡 (其他卡片寫「于周X开放」)，上方有「每日加成 N/3」。
+    """纺锤本：每天只開一個罪孽的關卡 (其他卡片寫「于周X开放」)。
 
+    上方「每日加成 N/3」的 N 是「今天還剩幾次」：3/3 = 還沒打，0/3 = 用完了。
     預設打 3 次，並且只打到每日加成用完為止。
     """
 
     TAB_TEXT = TEXT['lux_thread_tab']
     TITLE = '纺锤本'
     DEFAULT_RUNS = 3
-    SKIP_COST = 12   # 「选择关卡」上每一列「跳过战斗 -12」
+    SKIP_COST = 4    # 连续进行×3 時「选择关卡」顯示「跳过战斗 -12」= 每次 4
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -25,11 +26,11 @@ class ThreadLuxcavationTask(LuxcavationTask):
         self.config_description.update({
             'Level': '點下去後「选择关卡」視窗要選哪一列 (越下面等級越高)',
             'Runs': '要打幾次，1~10。每日加成一天 3 次',
-            'Only Daily Bonus': '只打還剩下的每日加成次數 (例如今天已打 1 次，就只打 2 次)',
+            'Only Daily Bonus': '只打還剩下的每日加成次數 (例如顯示 2/3，就只打 2 次；0/3 就不打)',
         })
 
     def read_daily_bonus(self):
-        """讀「每日加成 0/3」，回傳 (已用, 上限)。
+        """讀「每日加成 N/3」，回傳 (剩餘次數, 上限)。
 
         斜線那幾個字很花，OCR 常讀錯：先讀整塊，讀不到再把數字部分加框、放大重讀幾次。
         """
@@ -54,7 +55,7 @@ class ThreadLuxcavationTask(LuxcavationTask):
         self.info_set('每日加成', f'{bonus[0]}/{bonus[1]}' if bonus else '讀不到')
         if not self.config.get('Only Daily Bonus') or bonus is None:
             return runs
-        remaining = max(0, bonus[1] - bonus[0])
+        remaining = bonus[0]  # N/3 的 N 就是剩下的次數
         if remaining == 0:
             self.log_info('今天的每日加成已經用完，不打纺锤本')
         elif remaining < runs:

@@ -49,6 +49,10 @@ class LuxcavationTask(LimbusBaseTask):
             'Battle Timeout (s)': '進入戰鬥模式下，一場最多等幾秒 (连续进行 N 次就等 N 倍)',
         })
 
+    # 一鍵日常會先設定這個，用日常自己的次數；單獨執行時是 None，用任務自己的 Runs
+    runs_override = None
+    current_runs = 1
+
     # ---------- 給子類別調整 ----------
 
     def planned_runs(self, runs: int) -> int:
@@ -63,11 +67,13 @@ class LuxcavationTask(LimbusBaseTask):
 
     def run(self):
         self.open_luxcavation()
-        runs = max(1, self.config.get('Runs', 1))
+        runs = self.runs_override if self.runs_override is not None else self.config.get('Runs', 1)
+        runs = max(1, runs)
         if runs > MAX_REPEAT:
             self.log_warning(f'连续进行最多 {MAX_REPEAT} 次，改成 {MAX_REPEAT}')
             runs = MAX_REPEAT
         runs = self.planned_runs(runs)
+        self.current_runs = max(1, runs)
         if runs <= 0:
             self.go_home()
             return
@@ -300,7 +306,7 @@ class LuxcavationTask(LimbusBaseTask):
 
         连续进行 > 1 時會一場接一場打，全部打完才會回到列表。
         """
-        timeout = self.config.get('Battle Timeout (s)', 400) * max(1, self.config.get('Runs', 1))
+        timeout = self.config.get('Battle Timeout (s)', 400) * self.current_runs
         start = time.time()
         while time.time() - start < timeout:
             self.next_frame()

@@ -17,20 +17,33 @@ class DailyTask(LimbusBaseTask):
         self.default_config.update({
             'Convert Enkephalin': True,
             'Run Thread Luxcavation': True,
+            'Thread Runs': 3,
             'Run EXP Luxcavation': True,
+            'EXP Runs': 1,
         })
         self.config_description.update({
             'Convert Enkephalin': '先把體力換成模組 (采光要花模組)',
-            'Run Thread Luxcavation': '打纺锤本 (次數在「打纺锤本」任務裡設定，預設 3 次)',
-            'Run EXP Luxcavation': '打經驗本 (模式、次數、關卡在「打經驗本」任務裡設定)',
+            'Run Thread Luxcavation': '打纺锤本 (模式、關卡等其他設定沿用「打纺锤本」任務)',
+            'Thread Runs': '日常打纺锤本的次數，1~10 (仍會受每日加成限制)',
+            'Run EXP Luxcavation': '打經驗本 (模式、關卡等其他設定沿用「打經驗本」任務)',
+            'EXP Runs': '日常打經驗本的次數，1~10',
         })
 
     def run(self):
         if self.config.get('Convert Enkephalin'):
             self.run_task_by_class(EnkephalinTask)
         if self.config.get('Run Thread Luxcavation'):
-            self.run_task_by_class(ThreadLuxcavationTask)
+            self.run_luxcavation(ThreadLuxcavationTask, self.config.get('Thread Runs', 3))
         if self.config.get('Run EXP Luxcavation'):
-            self.run_task_by_class(ExpLuxcavationTask)
+            self.run_luxcavation(ExpLuxcavationTask, self.config.get('EXP Runs', 1))
         self.go_home()
         self.log_info('日常完成', notify=True)
+
+    def run_luxcavation(self, task_class, runs: int):
+        """用日常自己的次數跑采光任務，跑完把次數還原，單獨執行時才會用回任務自己的 Runs。"""
+        task = self.get_task_by_class(task_class)
+        task.runs_override = runs
+        try:
+            self.run_task_by_class(task_class)
+        finally:
+            task.runs_override = None
