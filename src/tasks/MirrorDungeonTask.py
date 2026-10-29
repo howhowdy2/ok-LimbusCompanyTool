@@ -206,7 +206,7 @@ class MirrorDungeonTask(MirrorShopMixin, MirrorRewardMixin, LimbusBaseTask):
         start = time.time()
         while time.time() - start < time_out:
             self.next_frame()
-            if self.handle_gift_popup() or self.handle_rewards():
+            if self.handle_rewards() or self.handle_gift_popup():
                 continue
             if self.on_map_screen():
                 return 'map'
@@ -492,7 +492,10 @@ class MirrorDungeonTask(MirrorShopMixin, MirrorRewardMixin, LimbusBaseTask):
 
     def handle_gift_popup(self) -> bool:
         """畫面上有「获得E.G.O饰品!」就記下名稱、按确认，回傳 True。任何時候出現都用這個處理。"""
-        if not self.ocr_roi('gift_got_title', TEXT['gift_got']):
+        # 只認畫面正中間的標題；戰後選饰品的每張卡上也有小小的「获得E.G.O饰品」標籤，不能當成彈窗
+        titles = [b for b in self.ocr_roi('gift_got_title', TEXT['gift_got'])
+                  if 0.45 < (b.x + b.width / 2) / self.width < 0.55]
+        if not titles or self.ocr_roi('gift_reward_marker', TEXT['gift_reward_marker']):
             return False
         name = ''.join(b.name for b in self.ocr_roi('gift_got_name')).strip() or '(讀不到名稱)'
         gifts = getattr(self, 'acquired_gifts', None)
@@ -1050,7 +1053,7 @@ class MirrorDungeonTask(MirrorShopMixin, MirrorRewardMixin, LimbusBaseTask):
                 if got == 'defeat':
                     return got
                 continue
-            if self.handle_gift_popup() or self.handle_rewards():
+            if self.handle_rewards() or self.handle_gift_popup():
                 continue
             if self.in_input_phase():
                 self.send_key('p', after_sleep=0.5)

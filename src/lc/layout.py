@@ -279,7 +279,7 @@ TEXT = {
     'pack_replace': ['替换', 'replace'],
     'shop_title': ['商店', 'Shop'],
     'judge_title': ['进行判定', '选择一位罪人'],
-    'reward_card_title': ['遭遇战奖励', '奖励卡'],
+    'reward_card_title': ['遭遇战奖励', '选择遭遇战'],
     'gift_reward_marker': ['追加的苦难', '苦难'],
     'leave': ['离开', 'Leave'],
     'buy': ['购买', 'Purchase', 'Buy'],

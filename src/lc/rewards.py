@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 from src.lc.vision import normalize_name
@@ -30,12 +31,22 @@ def classify_card(text: str) -> str:
 
 
 def affliction_rank(text: str, rules) -> int:
-    """苦難說明符合第幾條 (越小越好)，都不符合排最後。"""
-    text = normalize_name(text)
-    for i, rule in enumerate(rules):
-        if normalize_name(rule) and normalize_name(rule) in text:
-            return i
-    return len(rules)
+    """苦難的順位 (越小越好)。
+
+    一個苦難常有好幾個效果 (「防御等级+1，体力上限+7.5%」)：每一段取它符合的第一條規則，
+    整個苦難算最差的那一段；都不符合排最後。
+    """
+    rules = [normalize_name(r) for r in rules if normalize_name(r)]
+    worst = None
+    for clause in re.split(r'[，,、;；\s]+', text or ''):
+        clause = normalize_name(clause)
+        if not clause:
+            continue
+        for i, rule in enumerate(rules):
+            if rule in clause:
+                worst = i if worst is None else max(worst, i)
+                break
+    return len(rules) if worst is None else worst
 
 
 @dataclass

@@ -299,6 +299,12 @@ class RewardTest(unittest.TestCase):
                  GiftReward(3, 2, None, '防御等级强化 防御等级+2', 1)]
         order = [c.index for c in rank_gift_rewards(cards, '苦難', AFFLICTION_DEFAULT, [])]
         self.assertEqual([2, 3, 0, 1], order)
+        # 一個苦難有好幾個效果時，看最差的那個：攻击等级 + 体力上限 要排在 防御等级 + 体力上限 後面
+        cards2 = [GiftReward(0, 1, None, '强韧II 防御等级+1，体力上限 +7.5%', 1),
+                  GiftReward(1, 3, '烧伤', '顽强I 受到的伤害-7.5%，造成 的伤害+7.5%', 2),
+                  GiftReward(2, 1, '呼吸法', '强韧III 防御等级+2，体力上限 +5%', 1),
+                  GiftReward(3, 2, '震颤', '锐利I 攻击等级+1，体力上限 +5%', 1)]
+        self.assertEqual([0, 2, 3, 1], [c.index for c in rank_gift_rewards(cards2, '苦難', AFFLICTION_DEFAULT, [])])
         order = [c.index for c in rank_gift_rewards(cards, '飾品', AFFLICTION_DEFAULT, ['震颤'])]
         self.assertEqual(1, order[0])
         self.assertEqual([1, 3, 0, 2], order)
