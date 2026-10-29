@@ -460,18 +460,33 @@ def yellow_mask(image: np.ndarray) -> np.ndarray:
 
 
 def count_tier_bars(region: np.ndarray, min_height: float) -> int | None:
-    """數一塊區域裡黃色的羅馬數字：直的細條 = I，比較寬的 = V。min_height 是像素。"""
+    """數一塊區域裡黃色的羅馬數字 (I、II、III、IV)。min_height 是像素。
+
+    先只留直向的筆畫 (外框的黃黑斜紋會把 I 和 V 黏在一起)，再看每一筆是直的 (I) 還是斜的 (V 的一半)：
+    比較筆畫頂端和底端的水平位置，斜的就是 V 的一邊，兩邊算一個 V。
+    """
     mask = yellow_mask(region)
-    count, _, stats, _ = cv2.connectedComponentsWithStats(mask)
-    ones = fives = 0
+    k = max(5, int(min_height * 0.6))
+    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, np.ones((k, 1), np.uint8))
+    count, labels, stats, _ = cv2.connectedComponentsWithStats(mask)
+    ones = slanted = 0
     for i in range(1, count):
-        w, h = stats[i, cv2.CC_STAT_WIDTH], stats[i, cv2.CC_STAT_HEIGHT]
+        h = stats[i, cv2.CC_STAT_HEIGHT]
         if h < min_height:
-            continue                    # 外框的斜紋很短
-        if w * 1.8 <= h:
+            continue
+        ys, xs = np.nonzero(labels == i)
+        top, bottom = ys.min(), ys.max()
+        band = max(2, h // 8)
+        top_xs, bottom_xs = xs[ys <= top + band], xs[ys >= bottom - band]
+        top_span = top_xs.max() - top_xs.min() + 1
+        bottom_span = bottom_xs.max() - bottom_xs.min() + 1
+        if top_span > 1.5 * bottom_span and stats[i, cv2.CC_STAT_WIDTH] >= 0.3 * h:
+            slanted += 2                       # 整個 V (上寬下窄)
+        elif abs(top_xs.mean() - bottom_xs.mean()) > 0.25 * h:
+            slanted += 1                       # V 的一邊 (斜的)
+        else:
             ones += 1
-        elif w <= h * 1.3:
-            fives += 1
+    fives = (slanted + 1) // 2
     if fives:
         return 4 if ones == 1 else 5 if ones == 0 else None
     return ones if 1 <= ones <= 3 else None

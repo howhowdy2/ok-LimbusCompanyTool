@@ -310,6 +310,33 @@ class RewardTest(unittest.TestCase):
         self.assertEqual([1, 3, 0, 2], order)
 
 
+class TierNumeralTest(unittest.TestCase):
+    YELLOW = (40, 200, 240)
+
+    def draw(self, numeral, stripe=True):
+        frame = np.full((1440, 2560, 3), (30, 30, 30), np.uint8)
+        s = vision.GIFT_HALF * 1440
+        cx, cy = 1000, 700
+        x, top, bottom = int(cx - 0.75 * s), int(cy - 0.75 * s), int(cy - 0.25 * s)
+        for ch in numeral:
+            if ch == 'I':
+                cv2.rectangle(frame, (x, top), (x + 7, bottom), self.YELLOW, -1)
+                x += 14
+            else:   # V
+                pts = np.array([[x, top], [x + 7, top], [x + 13, bottom - 10], [x + 19, top], [x + 26, top],
+                                [x + 17, bottom], [x + 9, bottom]], np.int32)
+                cv2.fillPoly(frame, [pts], self.YELLOW)
+                x += 32
+        if stripe:   # 外框的黃黑斜紋碰到數字頂端
+            cv2.line(frame, (int(cx - 0.9 * s), top - 2), (x + 5, top - 2), self.YELLOW, 3)
+        return frame, (cx, cy)
+
+    def test_numerals(self):
+        for numeral, tier in (('I', 1), ('II', 2), ('III', 3), ('IV', 4)):
+            frame, center = self.draw(numeral)
+            self.assertEqual(tier, vision.gift_tier(frame, center), numeral)
+
+
 class GiftEnhancedTest(unittest.TestCase):
     def test_orange_plus(self):
         frame = np.full((1440, 2560, 3), (30, 30, 30), np.uint8)
