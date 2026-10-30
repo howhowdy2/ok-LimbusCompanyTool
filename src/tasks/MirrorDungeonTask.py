@@ -25,7 +25,7 @@ IN_PROGRESS_CONTINUE = '繼續探索'
 IN_PROGRESS_ABORT = '終止探索 (放棄獎勵)'
 
 GRACE_LEVELS = ['0', '1', '2']   # 1 = 卡片下的「+」，2 = 「++」
-GRACE_DEFAULT = ['1 0', '3 0', '5 0']   # 預設選 1、3、5，0 級
+GRACE_DEFAULT = ['1 起始之星', '3 星际旅行', '5 双星商店']   # 預設選 1、3、5，0 級
 GIFT_PICK_OPTIONS = ['1', '2', '3']
 OBSERVE_OFF = '不選'
 OBSERVE_TIERS = ['III', 'II', 'I']
@@ -45,13 +45,21 @@ def observe_keys(slot: int):
     return f'Observe {slot} Type', f'Observe {slot} Tier', f'Observe {slot} Index'
 
 
+GRACE_LEVEL_SUFFIX = {'0': '', '1': ' +', '2': ' ++'}
+GRACE_OPTIONS = [f'{i + 1} {name}{GRACE_LEVEL_SUFFIX[lvl]}'
+                 for i, name in enumerate(GRACE_NAMES) for lvl in GRACE_LEVELS]
+
+
 def parse_grace_line(text: str):
-    """「1 1」「起始之星 2」「3」-> (index 0~9, '0' / '1' / '2')；+ / ++ 也接受。看不懂回傳 None。"""
+    """「3 倾落的流星雨 ++」「1 1」「起始之星 2」「3」-> (index 0~9, '0' / '1' / '2')。看不懂回傳 None。"""
     parts = str(text).replace('：', ' ').replace(':', ' ').split()
     if not parts:
         return None
-    head, level = parts[0], (parts[1] if len(parts) > 1 else '0')
-    level = {'0級': '0', '0 級': '0', '無': '0', '+': '1', '++': '2'}.get(level, level)
+    head, rest = parts[0], parts[1:]
+    if rest and rest[0] in GRACE_NAMES:      # 「編號 名稱 [等級]」
+        rest = rest[1:]
+    level = rest[0] if rest else '0'
+    level = {'0級': '0', '無': '0', '+': '1', '++': '2'}.get(level, level)
     if level not in GRACE_LEVELS:
         return None
     if head.isdigit() and 1 <= int(head) <= len(GRACE_NAMES):
@@ -131,6 +139,12 @@ class MirrorDungeonTask(MirrorShopMixin, MirrorRewardMixin, LimbusBaseTask):
                 tier_key: '饰品等級 (III 在最上面)',
                 index_key: '該等級的第幾個，由左到右、上到下數 (每列 8 個，第 9 個是第二列第 1 個)',
             })
+        # 有優先順序的清單：左邊可選、右邊已選 (可上移 / 下移)
+        self.config_type.update({
+            'Graces': {'type': 'drop_down', 'options_available': GRACE_OPTIONS},
+            'Node Priority': {'type': 'drop_down', 'options_available': list(NODE_TYPES) + [NODE_UNKNOWN]},
+            'Event Option Priority': {'type': 'drop_down', 'options_available': list(vision.EVENT_KINDS)},
+        })
         self.config_type.update({
             'If In Progress': {'type': 'drop_down',
                                'options': [IN_PROGRESS_CONTINUE, IN_PROGRESS_ABORT]},
@@ -144,9 +158,8 @@ class MirrorDungeonTask(MirrorShopMixin, MirrorRewardMixin, LimbusBaseTask):
             'Gift Keyword': '開局選 E.G.O 饰品時，左邊要選哪一種關鍵字',
             'Gift Picks': '右邊三個饰品要選哪幾個 (由上到下 1~3)。'
                           '實際能選幾個看畫面「选择 0/N」，超過的會依序略過',
-            'Graces': '要選的星之恩惠，一行一個，格式「編號 等級」，等級是 0 / 1 / 2 (1 = +，2 = ++)，'
-                      '例如「1 0」「2 2」，編號也可以寫名稱「起始之星 1」。編號 (由左到右、上到下)：'
-                      + '、'.join(f'{i + 1}.{n}' for i, n in enumerate(GRACE_NAMES)),
+            'Graces': '要選的星之恩惠 (編號由左到右、上到下)，後面的 + / ++ 是強化等級，'
+                      '同一個恩惠只選一個等級',
         })
         # 設定畫面照流程順序顯示：恩惠 → 饰品观测 → 卡包 (各層想要的 → 避開 → 刷新/觀測)
         pack_keys = (['Pack Difficulty'] + [pack_key(f) for f in pack_data.FLOORS]

@@ -12,6 +12,8 @@ REWARD_DEFAULTS = {
     'Reward Keywords': [],
 }
 REWARD_TYPES = {
+    'Reward Card Priority': {'type': 'drop_down', 'options_available': list(rewards.CARD_KINDS)},
+    'Affliction Priority': {'type': 'drop_down', 'options_available': list(rewards.AFFLICTION_DEFAULT)},
     'Reward Gift Basis': {'type': 'drop_down', 'options': [rewards.BASIS_AFFLICTION, rewards.BASIS_GIFT]},
     'Reward Keywords': {'type': 'drop_down', 'options_available': GIFT_KEYWORDS},
 }
