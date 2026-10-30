@@ -668,3 +668,30 @@ def gift_enhanced(frame: np.ndarray, center, half: float = GIFT_HALF) -> bool:
         if w >= 0.25 * s and h >= 0.25 * s and 0.7 < w / h < 1.4 and 0.3 < area / (w * h) < 0.8:
             return True
     return False
+
+
+def find_green_button(frame: np.ndarray, box_px, min_area: int = 30) -> tuple[int, int] | None:
+    """在像素區域裡找最大的一塊綠色 (连续进行的「+」按鈕)，回傳中心。"""
+    left, top, right, bottom = box_px
+    region = frame[max(0, top):bottom, max(0, left):right, :3].astype(np.int16)
+    if region.size == 0:
+        return None
+    b, g, r = region[:, :, 0], region[:, :, 1], region[:, :, 2]
+    # 截圖的亮度會因為 HDR / 畫面設定差很多 (同一個綠色可能是 (16,37,17) 或 (60,160,70))，用比例判斷
+    mask = ((g > 28) & (g > r * 1.7) & (g > b * 1.7)).astype(np.uint8)
+    count, _, stats, centroids = cv2.connectedComponentsWithStats(mask)
+    best = None
+    for i in range(1, count):
+        if stats[i, cv2.CC_STAT_AREA] >= min_area and (best is None or stats[i, 4] > stats[best, 4]):
+            best = i
+    if best is None:
+        return None
+    # 用外框的中心 (中間的「+」是米色，綠色是一圈)
+    x, y, w, h = stats[best, 0], stats[best, 1], stats[best, 2], stats[best, 3]
+    return max(0, left) + int(x + w / 2), max(0, top) + int(y + h / 2)
+
+
+def parse_bonus_hint(text: str) -> int | None:
+    """「可适用3次每日加成」-> 3。"""
+    found = re.search(r'(\d+)\s*次', normalize_name(text) if text else '')
+    return int(found.group(1)) if found else None

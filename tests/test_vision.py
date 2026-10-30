@@ -337,6 +337,21 @@ class TierNumeralTest(unittest.TestCase):
             self.assertEqual(tier, vision.gift_tier(frame, center), numeral)
 
 
+class RepeatPanelTest(unittest.TestCase):
+    def test_green_plus_dark_capture(self):
+        frame = np.full((1440, 2560, 3), (3, 4, 9), np.uint8)
+        cv2.rectangle(frame, (850, 495), (895, 540), (16, 37, 17), -1)       # 很暗的綠色按鈕
+        cv2.rectangle(frame, (862, 514), (883, 521), (164, 205, 237), -1)    # 米色 +
+        cv2.rectangle(frame, (600, 495), (640, 540), (40, 40, 120), -1)      # 紅色 − 不算
+        x, y = vision.find_green_button(frame, (500, 480, 1000, 560))
+        self.assertAlmostEqual(872, x, delta=3)
+        self.assertAlmostEqual(517, y, delta=3)
+
+    def test_bonus_hint(self):
+        self.assertEqual(3, vision.parse_bonus_hint('可适用3次每日加成'))
+        self.assertIsNone(vision.parse_bonus_hint('连续进行'))
+
+
 class GiftEnhancedTest(unittest.TestCase):
     def test_orange_plus(self):
         frame = np.full((1440, 2560, 3), (30, 30, 30), np.uint8)

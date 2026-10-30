@@ -169,12 +169,15 @@ class LuxcavationTask(LimbusBaseTask):
         row = self.ocr_px(int(header.x - 0.12 * w), int(ty + 0.015 * h),
                           int(tx + 0.03 * w), int(ty + 0.08 * h), ['《', '«', '+'])
         reset = next((b for b in row if '《' in b.name or '«' in b.name), None)
-        plus = next((b for b in row if '+' in b.name), None)
         row_y = ty + REPEAT.row_dy * h
         reset_xy = (reset.x + reset.width / 2, reset.y + reset.height / 2) if reset \
             else (tx + REPEAT.min_dx * w, row_y)
-        plus_xy = (plus.x + plus.width / 2, plus.y + plus.height / 2) if plus \
-            else (tx + REPEAT.plus_dx * w, row_y)
+        # 綠色 + 是圖示，OCR 常讀不到 (或把 −、»10 讀成 +)：直接找綠色的那一格
+        plus_xy = vision.find_green_button(self.frame, (int(header.x - 0.12 * w), int(ty + 0.015 * h),
+                                                        int(tx + 0.03 * w), int(ty + 0.08 * h)))
+        if plus_xy is None:
+            self.log_warning('找不到綠色的 +，用固定位置')
+            plus_xy = (tx + REPEAT.plus_dx * w, row_y)
         return reset_xy, plus_xy
 
     def click_px(self, xy, after_sleep):

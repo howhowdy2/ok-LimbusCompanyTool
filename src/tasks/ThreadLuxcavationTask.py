@@ -50,8 +50,45 @@ class ThreadLuxcavationTask(LuxcavationTask):
                 return found
         return None
 
+    def read_daily_bonus_retry(self, time_out: float = 5):
+        """剛切到纺锤分頁時上方的字還在淡入，多讀幾次。"""
+        import time
+        start = time.time()
+        while time.time() - start < time_out:
+            self.next_frame()
+            found = self.read_daily_bonus()
+            if found:
+                return found
+            self.sleep(0.7)
+        return None
+
+    def bonus_from_panel(self):
+        """展開第一張開放卡片的「连续进行」，讀下面的「可适用N次每日加成」，再收起來。"""
+        buttons = self.available_buttons(self.stage_buttons(skip=True))
+        if not buttons:
+            return None
+        header = self.repeat_header(buttons[0])
+        toggle = self.find_toggle(header) if header else None
+        if toggle is None:
+            return None
+        self.click_px(toggle, after_sleep=0.8)
+        self.next_frame()
+        w, h = self.width, self.height
+        boxes = self.ocr_px(int(header.x - 0.12 * w), int(toggle[1] + 0.08 * h),
+                            int(toggle[0] + 0.03 * w), int(toggle[1] + 0.2 * h), ['次', '加成'])
+        self.click_px(toggle, after_sleep=0.6)
+        for b in boxes:
+            n = vision.parse_bonus_hint(b.name)
+            if n is not None:
+                return n, 3
+        return None
+
     def planned_runs(self, runs: int) -> int:
-        bonus = self.read_daily_bonus()
+        bonus = self.read_daily_bonus_retry()
+        if bonus is None:
+            bonus = self.bonus_from_panel()
+            if bonus:
+                self.log_info(f'上方讀不到，從「可适用{bonus[0]}次每日加成」讀到')
         self.info_set('每日加成', f'{bonus[0]}/{bonus[1]}' if bonus else '讀不到')
         if not self.config.get('Only Daily Bonus') or bonus is None:
             return runs
