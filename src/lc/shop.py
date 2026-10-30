@@ -48,14 +48,21 @@ class ShopItem:
     name: str = ''
 
 
-def wanted_items(items, keywords, tiers, money):
-    """要買的饰品，依優先順序：關鍵詞在設定裡的順序 → 等級高的先 → 便宜的先。
+def wanted_items(items, keywords, tiers, money, wanted=None):
+    """要買的饰品，依優先順序：「想要的饰品」清單裡的 (照清單順序) → 關鍵詞在設定裡的順序 → 等級高的 → 便宜的。
 
-    keywords / tiers 空的 = 不限。讀不到價格或等級 (例如「替换…的技能」) 的不買，買不起的不買。
+    keywords / tiers 空的 = 不限；想要清單裡的饰品不受關鍵詞 / 等級限制。
+    讀不到價格的不買，買不起的不買。
     """
+    from src.lc import gifts
     result = []
     for item in items:
-        if item.price is None or item.tier is None or item.price > money:
+        if item.price is None or item.price > money:
+            continue
+        if gifts.wanted_rank(item.name, wanted) is not None:
+            result.append(item)
+            continue
+        if item.tier is None:
             continue
         if keywords and item.keyword not in keywords:
             continue
@@ -63,4 +70,17 @@ def wanted_items(items, keywords, tiers, money):
             continue
         result.append(item)
     rank = {k: i for i, k in enumerate(keywords or [])}
-    return sorted(result, key=lambda it: (rank.get(it.keyword, 0), -it.tier, it.price))
+
+    def key(it):
+        w = gifts.wanted_rank(it.name, wanted)
+        return (0 if w is not None else 1, w or 0, rank.get(it.keyword, 0), -(it.tier or 0), it.price)
+    return sorted(result, key=key)
+
+
+def fuse_materials(gifts_on_screen, material_tiers, avoid_keywords, skip_enhanced):
+    """可以拿去合成的饰品：等級在 material_tiers、不是要保留的關鍵詞、(可選) 沒強化過。
+
+    gifts_on_screen: [(索引, 等級, 關鍵詞, 強化過)]
+    """
+    return [g for g in gifts_on_screen
+            if g[1] in material_tiers and g[2] not in avoid_keywords and not (skip_enhanced and g[3])]

@@ -5,7 +5,7 @@ import time
 
 import cv2
 
-from src.lc import shop, vision
+from src.lc import gifts, shop, vision
 from src.lc.layout import (ENHANCE_BTN, ENHANCE_CONFIRM, ENHANCE_GRID, ENHANCE_PLUS, ENHANCE_PLUSPLUS,
                            FUSE_BTN, FUSE_CENTER, FUSE_GRID, GIFT_KEYWORDS, GIFT_LIT_VALUE,
                            KEYWORD_MATCH_THRESHOLD, KEYWORD_TEMPLATES, KW_CELL_X, KW_CELL_Y, KW_CONFIRM,
@@ -31,6 +31,9 @@ SHOP_DEFAULTS = {
     'Fuse Tiers': ['3', '4'],
     'Fuse Material Tiers': ['1', '2'],
     'Fuse Skip Enhanced': True,
+    'Fuse Targets': [],
+    'Fuse Keep Target Keywords': True,
+    'Fuse Max Times': 3,
 }
 SHOP_TYPES = {
     'Shop Keywords': {'type': 'drop_down', 'options_available': GIFT_KEYWORDS},   # 清單，可排順序
@@ -39,20 +42,25 @@ SHOP_TYPES = {
     'Fuse Keyword': {'type': 'drop_down', 'options': GIFT_KEYWORDS},
     'Fuse Tiers': {'type': 'multi_selection', 'options': FUSE_TIER_OPTIONS},
     'Fuse Material Tiers': {'type': 'multi_selection', 'options': FUSE_TIER_OPTIONS},
+    'Fuse Targets': {'type': 'drop_down', 'options_available': gifts.fuse_target_labels()},
 }
 SHOP_DESCRIPTIONS = {
     'Shop Enable': '走到商店時要不要買 / 強化 / 合成 (關掉就直接离开)',
     'Shop Min Money': '最低保留經費：買、強化、刷新前經費低於這個數字就不做，直接离开',
-    'Shop Keywords': '要買哪些關鍵詞的饰品 (看饰品右下角的圖示)，越上面越優先；空的 = 不限',
+    'Shop Keywords': '(想要的饰品之外) 要買哪些關鍵詞的饰品 (看饰品右下角的圖示)，越上面越優先；空的 = 不限',
     'Shop Tiers': '要買哪些等級的饰品 (左上角的羅馬數字)，不勾 = 不限',
     'Shop Refreshes': '沒有想買的饰品時，最多按幾次右上「刷新」',
     'Shop Enhance': '買完後用「强化饰品」強化亮起的饰品 (符合 Shop Keywords 的先強化)',
     'Enhance Level': '強化選 + 還是 ++',
     'Shop Fuse': '用「合成饰品」把低等級饰品合成高等級 (會消耗材料饰品)',
-    'Fuse Keyword': '合成出來的饰品關鍵詞',
+    'Fuse Targets': '合成目標 (可多個，越上面越先做)：用目標的關鍵詞和等級合成，已經拿到的目標會略過。'
+                    '有設目標時不看下面的 Fuse Keyword / Fuse Tiers',
+    'Fuse Keep Target Keywords': '不拿目標關鍵詞的饰品當材料 (例如目標是呼吸法，就不消耗呼吸法饰品)',
+    'Fuse Max Times': '每次進商店最多合成幾次',
+    'Fuse Keyword': '沒設合成目標時，合成出來的饰品關鍵詞',
     'Fuse Material Tiers': '哪些等級的饰品可以拿去當合成材料 (預設 1、2 級)',
     'Fuse Skip Enhanced': '不拿強化過 (右上角有 +) 的饰品當材料',
-    'Fuse Tiers': '想合成的等級 (做得到最高的優先)，例如勾 3、4。點數：I=3 II=6 III=10 IV=15；'
+    'Fuse Tiers': '沒設合成目標時，想合成的等級 (做得到最高的優先)，例如勾 3、4。點數：I=3 II=6 III=10 IV=15；'
                   '合計 ≤10→1級、11~16→2級、17~24→3級、≥25→4級 (最多 3 個材料)',
 }
 
@@ -170,8 +178,13 @@ class MirrorShopMixin:
                         price = longest_number(b.name)
                     elif y + SHOP_PRICE_DY[1] < by <= y + 0.14:
                         name = b.name.strip()
-                items.append(shop.ShopItem(index, tier, kw if score >= KEYWORD_MATCH_THRESHOLD else None,
-                                           price, name))
+                kw = kw if score >= KEYWORD_MATCH_THRESHOLD else None
+                known = gifts.match(name)
+                if known:   # 認得名稱就用資料裡的等級 / 關鍵詞 (比看圖示準)
+                    name = known
+                    tier, data_kw = gifts.info(known)
+                    kw = data_kw or kw
+                items.append(shop.ShopItem(index, tier, kw, price, name))
         return items
 
     def shop_buy(self):
@@ -184,9 +197,10 @@ class MirrorShopMixin:
             if not self.money_ok(money, '買'):
                 return
             items = self.shop_items()
-            self.info_set('商店', '、'.join(f'{it.name or "?"}({TIER_NAMES[it.tier - 1] if it.tier else "?"}/'
+            self.info_set('商店', '、'.join(f'{it.name or "?"}({gifts.TIER_NAMES.get(it.tier, "?")}/'
                                            f'{it.keyword or "?"}/{it.price})' for it in items if it.tier or it.price))
-            wanted = [it for it in shop.wanted_items(items, keywords, tiers, money)
+            wanted = [it for it in shop.wanted_items(items, keywords, tiers, money,
+                                                     self.config.get('Wanted Gifts', []))
                       if (it.name, it.price) not in tried]
             if wanted:
                 item = wanted[0]
@@ -205,7 +219,7 @@ class MirrorShopMixin:
     def buy_item(self, item):
         x = SHOP_ITEM_X[item.index % len(SHOP_ITEM_X)]
         y = SHOP_ITEM_Y[item.index // len(SHOP_ITEM_X)]
-        self.log_info(f'購買饰品：{item.name} ({TIER_NAMES[item.tier - 1]} {item.keyword or ""}，{item.price})')
+        self.log_info(f'購買饰品：{item.name} ({gifts.TIER_NAMES.get(item.tier, "?")} {item.keyword or ""}，{item.price})')
         self.click_relative(x, y, after_sleep=1.5)
         if not self.wait_until(lambda: self.ocr_roi('shop_buy_title', TEXT['buy']), time_out=5):
             self.log_warning('點了饰品沒有出現購買視窗')
@@ -268,41 +282,77 @@ class MirrorShopMixin:
 
     # ---------- 合成 ----------
 
+    def fuse_plans(self):
+        """要合成的 [(關鍵詞, {目標等級}, 目標名稱或 None)]。
+
+        有設「Fuse Targets」就照目標的關鍵詞和等級合成 (已經拿到的目標略過)，
+        沒設就用 Fuse Keyword + Fuse Tiers。
+        """
+        targets = [gifts.name_of(t) for t in self.config.get('Fuse Targets', [])]
+        owned = {gifts.match(n) for n in getattr(self, 'acquired_gifts', [])}
+        plans = []
+        for name in targets:
+            data = gifts.info(name)
+            if not data or name in owned:
+                continue
+            tier, kw = data
+            if kw in GIFT_KEYWORDS and 2 <= tier <= 4:
+                plans.append((kw, {tier}, name))
+        if not plans and not targets:
+            plans.append((self.config.get('Fuse Keyword', GIFT_KEYWORDS[0]),
+                          {int(t) for t in self.config.get('Fuse Tiers', ['3', '4'])}, None))
+        return plans
+
     def shop_fuse(self):
-        keyword = self.config.get('Fuse Keyword', GIFT_KEYWORDS[0])
-        targets = {int(t) for t in self.config.get('Fuse Tiers', ['4'])}
+        plans = self.fuse_plans()
+        if not plans:
+            self.log_info('合成目標都拿到了，不合成')
+            return
+        # 目標的關鍵詞要留著，不拿去當材料
+        avoid = {kw for kw, _, _ in plans} if self.config.get('Fuse Keep Target Keywords', True) else set()
+        materials = {int(t) for t in self.config.get('Fuse Material Tiers', ['1', '2'])}
+        skip_enhanced = self.config.get('Fuse Skip Enhanced', True)
         self.click_relative(*SHOP_FUSE_BTN, after_sleep=2)
         if not self.wait_until(lambda: self.ocr_roi('shop_sub_title', TEXT['fuse_title']), time_out=6):
             self.log_warning('沒有打開合成畫面')
             return
-        for _ in range(3):
-            if not self.choose_fuse_keyword(keyword):
-                break
-            materials = {int(t) for t in self.config.get('Fuse Material Tiers', ['1', '2'])}
-            skip_enhanced = self.config.get('Fuse Skip Enhanced', True)
-            gifts = [g for g in self.lit_gifts(FUSE_GRID)
-                     if g[1] in materials and not (skip_enhanced and g[3])]
-            combo = shop.best_fuse_combo([g[1] for g in gifts], targets)
-            if combo is None:
-                self.log_info('材料不夠合成想要的等級')
-                break
-            picked = [gifts[i] for i in combo]
-            total = sum(shop.FUSE_POINTS[g[1]] for g in picked)
-            self.log_info(f'合成{keyword}：材料 ' + '、'.join(TIER_NAMES[g[1] - 1] for g in picked)
-                          + f' (共 {total} 點 → {shop.fuse_result_tier(total)} 級)')
-            for index, _, _, _ in picked:
-                self.click(*self.gift_center(FUSE_GRID, index), after_sleep=1)
-            self.click_relative(*FUSE_BTN, after_sleep=2.5)
-            for _ in range(6):   # 確認 / 獲得饰品
-                self.next_frame()
-                if self.handle_gift_popup():
+        done = 0
+        for keyword, targets, name in plans:
+            for _ in range(3):
+                if done >= int(self.config.get('Fuse Max Times', 3)):
                     break
-                ok = self.ocr_roi('center', TEXT['confirm'])
-                if ok:
-                    self.click_box(ok, after_sleep=2)
-                else:
-                    self.sleep(1)
-            self.info_incr('合成饰品')
+                if not self.choose_fuse_keyword(keyword):
+                    break
+                pool = shop.fuse_materials(self.lit_gifts(FUSE_GRID), materials, avoid, skip_enhanced)
+                combo = shop.best_fuse_combo([g[1] for g in pool], targets)
+                if combo is None:
+                    self.log_info(f'材料不夠合成{keyword} {"/".join(TIER_NAMES[t - 1] for t in sorted(targets))}'
+                                  + (f' (目標：{name})' if name else ''))
+                    break
+                picked = [pool[i] for i in combo]
+                total = sum(shop.FUSE_POINTS[g[1]] for g in picked)
+                self.log_info(f'合成{keyword}' + (f' (目標：{name})' if name else '') + '：材料 '
+                              + '、'.join(f'{TIER_NAMES[g[1] - 1]}{g[2] or ""}' for g in picked)
+                              + f' (共 {total} 點 → {shop.fuse_result_tier(total)} 級)')
+                for index, _, _, _ in picked:
+                    self.click(*self.gift_center(FUSE_GRID, index), after_sleep=1)
+                self.click_relative(*FUSE_BTN, after_sleep=2.5)
+                got = False
+                for _ in range(6):   # 確認 / 獲得饰品
+                    self.next_frame()
+                    if self.handle_gift_popup():
+                        got = True
+                        break
+                    ok = self.ocr_roi('center', TEXT['confirm'])
+                    if ok:
+                        self.click_box(ok, after_sleep=2)
+                    else:
+                        self.sleep(1)
+                done += 1
+                self.info_incr('合成饰品')
+                if got and name and name in {gifts.match(n) for n in self.acquired_gifts[-1:]}:
+                    self.log_info(f'合成到目標：{name}')
+                    break
         self.close_sub_screen()
 
     def choose_fuse_keyword(self, keyword) -> bool:

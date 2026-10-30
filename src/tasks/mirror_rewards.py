@@ -1,23 +1,27 @@
 """戰鬥後的獎勵：遭遇戰獎勵卡、選 E.G.O 饰品 (附帶苦難)。給 MirrorDungeonTask 繼承用。"""
 
-from src.lc import rewards, vision
+from src.lc import gifts, rewards, vision
 from src.lc.layout import (GIFT_KEYWORDS, GIFT_REWARD_CLICK_Y, GIFT_TAG_TO_CENTER, KEYWORD_TEMPLATES, GIFT_REWARD_KEYWORD, GIFT_REWARD_SELECT,
                            GIFT_REWARD_TIER, GIFT_REWARD_X, KEYWORD_MATCH_THRESHOLD, REWARD_CARD_CONFIRM,
                            REWARD_CARD_Y, TEXT)
 
 REWARD_DEFAULTS = {
+    'Wanted Gifts': [],
     'Reward Card Priority': list(rewards.CARD_KINDS),
     'Reward Gift Basis': rewards.BASIS_AFFLICTION,
     'Affliction Priority': list(rewards.AFFLICTION_DEFAULT),
     'Reward Keywords': [],
 }
 REWARD_TYPES = {
+    'Wanted Gifts': {'type': 'drop_down', 'options_available': gifts.all_labels()},
     'Reward Card Priority': {'type': 'drop_down', 'options_available': list(rewards.CARD_KINDS)},
     'Affliction Priority': {'type': 'drop_down', 'options_available': list(rewards.AFFLICTION_DEFAULT)},
     'Reward Gift Basis': {'type': 'drop_down', 'options': [rewards.BASIS_AFFLICTION, rewards.BASIS_GIFT]},
     'Reward Keywords': {'type': 'drop_down', 'options_available': GIFT_KEYWORDS},
 }
 REWARD_DESCRIPTIONS = {
+    'Wanted Gifts': '想要的 E.G.O 饰品 (越上面越優先)：戰後獎勵和商店看到名稱符合的會最先拿 / 買，'
+                    '不受關鍵詞、等級、苦難的限制',
     'Reward Card Priority': '「选择遭遇战奖励卡」的優先順序，一行一個：' + '、'.join(rewards.CARD_KINDS),
     'Reward Gift Basis': '戰鬥後選 E.G.O 饰品 (每張附帶一個苦難) 時，以苦難還是以饰品為準',
     'Affliction Priority': '以苦難為準時，苦難說明含這些字的優先 (越上面越好)，都不含的排最後。'
@@ -27,6 +31,20 @@ REWARD_DESCRIPTIONS = {
 
 
 class MirrorRewardMixin:
+
+    def card_names(self):
+        """饰品卡上方的名稱：[(中心 x 相對座標, 資料裡的名稱)]，認不出來的略過。"""
+        result = []
+        for b in self.ocr_roi('gift_name_row'):
+            name = gifts.match(b.name)
+            if name:
+                result.append(((b.x + b.width / 2) / self.width, name))
+        return result
+
+    @staticmethod
+    def name_near(names, cx, limit=0.09):
+        near = [(abs(x - cx), n) for x, n in names if abs(x - cx) < limit]
+        return min(near)[1] if near else ''
 
     def handle_rewards(self) -> bool:
         """畫面是獎勵選擇就處理掉，回傳 True。"""
@@ -77,6 +95,7 @@ class MirrorRewardMixin:
     def gift_reward_cards(self):
         self.next_frame()
         templates = self.keyword_templates()
+        names = self.card_names()
         aff_boxes = self.ocr_roi('gift_reward_aff')
         level_boxes = self.ocr_roi('gift_reward_level')
         cards = []
@@ -93,8 +112,11 @@ class MirrorRewardMixin:
             kx0, ky0, kx1, ky1 = GIFT_REWARD_KEYWORD
             tier = vision.tier_in_roi(self.frame, (x + tx0, ty0, x + tx1, ty1))
             kw, score = vision.keyword_in_roi(self.frame, (x + kx0, ky0, x + kx1, ky1), templates)
-            cards.append(rewards.GiftReward(i, tier, kw if score >= KEYWORD_MATCH_THRESHOLD else None,
-                                            text, level))
+            name = self.name_near(names, x)
+            kw = kw if score >= KEYWORD_MATCH_THRESHOLD else None
+            if name:
+                tier, kw = gifts.info(name)
+            cards.append(rewards.GiftReward(i, tier, kw, text, level, name))
         return cards
 
     def choose_gift_rewards(self):
@@ -104,9 +126,10 @@ class MirrorRewardMixin:
         basis = self.config.get('Reward Gift Basis', rewards.BASIS_AFFLICTION)
         rules = [str(x).strip() for x in self.config.get('Affliction Priority', rewards.AFFLICTION_DEFAULT)
                  if str(x).strip()]
-        ranked = rewards.rank_gift_rewards(cards, basis, rules, list(self.config.get('Reward Keywords', [])))
+        ranked = rewards.rank_gift_rewards(cards, basis, rules, list(self.config.get('Reward Keywords', [])),
+                                           self.config.get('Wanted Gifts', []))
         self.log_info(f'選饰品獎勵 (以{basis}為準，選 {n} 個)：' + '、'.join(
-            f'{c.index + 1}:{["?", "I", "II", "III", "IV", "V"][c.tier or 0]}/{c.keyword or "?"}/{c.affliction}'
+            f'{c.index + 1}:{c.name or "?"}/{gifts.TIER_NAMES.get(c.tier, "?")}/{c.keyword or "?"}/{c.affliction}'
             f'/+{c.enemy_level}' for c in ranked))
         for card in ranked[:n]:
             self.click_relative(GIFT_REWARD_X[card.index], GIFT_REWARD_CLICK_Y, after_sleep=0.8)
@@ -127,6 +150,7 @@ class MirrorRewardMixin:
         self.next_frame()
         templates = self.keyword_templates()
         cards = []
+        names = self.card_names()
         tags = sorted(self.ocr_roi('gift_tag_row', TEXT['gift_got']), key=lambda b: b.x)
         for i, tag in enumerate(tags):
             cx = (tag.x + tag.width / 2) / self.width + GIFT_TAG_TO_CENTER
@@ -134,7 +158,11 @@ class MirrorRewardMixin:
             kx0, ky0, kx1, ky1 = GIFT_REWARD_KEYWORD
             tier = vision.tier_in_roi(self.frame, (cx + tx0, ty0, cx + tx1, ty1))
             kw, score = vision.keyword_in_roi(self.frame, (cx + kx0, ky0, cx + kx1, ky1), templates)
-            cards.append((cx, tier, kw if score >= KEYWORD_MATCH_THRESHOLD else None))
+            name = self.name_near(names, cx)
+            kw = kw if score >= KEYWORD_MATCH_THRESHOLD else None
+            if name:
+                tier, kw = gifts.info(name)
+            cards.append((cx, tier, kw, name))
         return cards
 
     def plain_gift_screen(self):
@@ -147,13 +175,18 @@ class MirrorRewardMixin:
         cards = self.plain_gift_cards()
         keywords = list(self.config.get('Reward Keywords', []))
         rank = {k: i for i, k in enumerate(keywords)}
-        cards.sort(key=lambda c: (-(c[1] or 0), rank.get(c[2], len(rank))))
+        wanted = self.config.get('Wanted Gifts', [])
+
+        def key(c):
+            w = gifts.wanted_rank(c[3], wanted)
+            return (0, w) if w is not None else (1, 0), -(c[1] or 0), rank.get(c[2], len(rank))
+        cards.sort(key=key)
         n = self.picks_left('gift_reward_btns')
         self.log_info('饰品獎勵：' + '、'.join(
-            f'{["?", "I", "II", "III", "IV", "V"][t or 0]}/{k or "?"}' for _, t, k in cards) + f'，選 {n} 個')
+            f'{nm or "?"}/{gifts.TIER_NAMES.get(t, "?")}/{k or "?"}' for _, t, k, nm in cards) + f'，選 {n} 個')
         for attempt in range(3):
             if attempt > 0 or len(cards) > 1:
-                for cx, _, _ in cards[:n]:
+                for cx, _, _, _ in cards[:n]:
                     self.click_relative(cx, GIFT_REWARD_CLICK_Y, after_sleep=0.8)
             button = [b for b in self.ocr_roi('gift_reward_btns', TEXT['select'])
                       if not vision.keywords_regex(TEXT['reject']).search(b.name)]

@@ -364,6 +364,32 @@ class GiftEnhancedTest(unittest.TestCase):
         self.assertTrue(vision.gift_enhanced(frame, (cx, cy)))
 
 
+class GiftDataTest(unittest.TestCase):
+    def test_load_and_match(self):
+        from src.lc import gifts
+        data = gifts.load_gifts()
+        self.assertGreater(len(data), 400)
+        self.assertEqual((1, '充能'), data['简历'])
+        self.assertEqual('简历', gifts.name_of(gifts.label('简历')))
+        self.assertEqual('剧毒外皮', gifts.match('剧毒外皮'))
+        self.assertIsNone(gifts.match('拒绝饰品'))
+        self.assertEqual(1, gifts.wanted_rank('简历', ['剧毒外皮（I·震颤）', gifts.label('简历')]))
+        self.assertTrue(all('泛用' not in o for o in gifts.fuse_target_labels()))
+
+    def test_fuse_materials_keep_target_keyword(self):
+        from src.lc import shop
+        on_screen = [(0, 1, '呼吸法', False), (1, 2, '震颤', False), (2, 1, None, False),
+                     (3, 1, '流血', True), (4, 4, '流血', False)]
+        pool = shop.fuse_materials(on_screen, {1, 2}, {'呼吸法'}, True)
+        self.assertEqual([1, 2], [g[0] for g in pool])
+
+    def test_wanted_first_in_shop(self):
+        from src.lc.shop import ShopItem, wanted_items
+        items = [ShopItem(0, 2, '沉沦', 200, '某个'), ShopItem(1, 1, '充能', 150, '简历')]
+        order = wanted_items(items, ['沉沦'], [], 500, ['简历（I·充能）'])
+        self.assertEqual([1, 0], [i.index for i in order])
+
+
 class KeywordsRegexTest(unittest.TestCase):
     def test_contains_and_ignores_case(self):
         pattern = vision.keywords_regex(['To Battle', '出击'])

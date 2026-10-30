@@ -32,6 +32,7 @@ OBSERVE_TIERS = ['III', 'II', 'I']
 OBSERVE_SLOTS = 3
 MODE_KEEP, MODE_HARD, MODE_NORMAL = '不切換', '困难', '普通'
 NODE_DEFAULT = ['事件', '戰鬥', '異想體']
+SETTINGS_GROUP, SHOW_ALL = 'Settings Group', '全部顯示'
 UNKNOWN_NODE_DIR = Path('screenshots') / 'map_nodes'
 EVENT_LOG_DIR = Path('screenshots') / 'event_options'
 EVENT_DEFAULT = list(vision.EVENT_KINDS)
@@ -173,6 +174,44 @@ class MirrorDungeonTask(MirrorShopMixin, MirrorRewardMixin, LimbusBaseTask):
             self.default_config.update(defaults)
             self.config_type.update(types)
             self.config_description.update(descriptions)
+        self.organize_settings()
+
+    def organize_settings(self):
+        """設定畫面分組：最上面選「設定分類」只顯示那一組；開關關掉時，底下的細項也收起來。"""
+        observe = [observe_keys(slot)[0] for slot in range(1, OBSERVE_SLOTS + 1)]
+        groups = {
+            '① 進入與編隊': ['Min Star Reward', 'If In Progress'],
+            '② 恩惠與開局饰品': ['Graces', 'Gift Keyword', 'Gift Picks'] + observe,
+            '③ 主題卡包': (['Pack Difficulty'] + [pack_key(f) for f in pack_data.FLOORS]
+                          + ['Pack Avoid', 'Pack Use Refresh', 'Pack Use Observe']),
+            '④ 地圖與事件': ['Node Priority', 'Map Lookahead', 'Event Option Priority'],
+            '⑤ 戰鬥與獎勵': ['Battle Timeout (s)', 'Reward Card Priority', 'Reward Gift Basis', 'Use Weekly Bonus'],
+            '⑥ 想要的饰品': ['Wanted Gifts'],
+            '⑦ 商店 (購買 / 強化 / 合成)': ['Shop Enable'],
+        }
+        all_keys = [k for keys in groups.values() for k in keys]
+        choices = list(groups) + [SHOW_ALL]
+        # 開關 / 選項底下的細項 (關掉就收起來)
+        self.config_type['Reward Gift Basis']['sub_configs'] = {
+            '苦難': ['Affliction Priority'], '飾品': ['Reward Keywords']}
+        self.config_type['Shop Enable'] = {'sub_configs': {True: [
+            'Shop Min Money', 'Shop Keywords', 'Shop Tiers', 'Shop Refreshes', 'Shop Enhance', 'Shop Fuse']}}
+        self.config_type['Shop Enhance'] = {'sub_configs': {True: ['Enhance Level']}}
+        self.config_type['Shop Fuse'] = {'sub_configs': {True: [
+            'Fuse Targets', 'Fuse Keep Target Keywords', 'Fuse Material Tiers', 'Fuse Skip Enhanced',
+            'Fuse Max Times', 'Fuse Keyword', 'Fuse Tiers']}}
+        self.config_type[SETTINGS_GROUP] = {
+            'type': 'drop_down', 'options': choices,
+            'sub_configs': {**groups, SHOW_ALL: all_keys},
+        }
+        self.config_description[SETTINGS_GROUP] = '選一個分類只顯示那一組設定 (沒顯示的設定一樣有效)'
+        # 重新排序：分類選單 → 各組依序 → 其他 (細項跟在父項後面，由 ok-script 處理)
+        ordered = {SETTINGS_GROUP: choices[0]}
+        for key in all_keys + list(self.default_config):
+            if key in self.default_config and key not in ordered:
+                ordered[key] = self.default_config[key]
+        self.default_config.clear()
+        self.default_config.update(ordered)
 
     def run(self):
         # 先看是不是已經在迷宮裡 (地圖、卡包選擇、商店、事件、戰鬥…)，是的話直接接著走

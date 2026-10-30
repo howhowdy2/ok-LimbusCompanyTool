@@ -56,22 +56,27 @@ class GiftReward:
     keyword: str | None
     affliction: str
     enemy_level: int | None = None
+    name: str = ''
 
 
-def rank_gift_rewards(cards, basis, rules, keywords):
+def rank_gift_rewards(cards, basis, rules, keywords, wanted=None):
     """回傳排好的卡片 (最想要的在前)。
 
+    「想要的饰品」清單裡的永遠最優先 (照清單順序)，其次：
     以苦難為準：苦難順位 → 敵方等級增加少的 → 饰品等級高的。
     以饰品為準：關鍵詞符合 (照設定順序) → 饰品等級高的 → 苦難順位。
     """
+    from src.lc.gifts import wanted_rank
     kw_rank = {k: i for i, k in enumerate(keywords or [])}
 
     def key(card):
+        w = wanted_rank(card.name, wanted)
+        head = (0, w) if w is not None else (1, 0)
         aff = affliction_rank(card.affliction, rules)
         tier = -(card.tier or 0)
         level = card.enemy_level if card.enemy_level is not None else 99
         if basis == BASIS_GIFT:
             kw = kw_rank.get(card.keyword, len(kw_rank)) if keywords else 0
-            return kw, tier, aff, level
-        return aff, level, tier
+            return head + (kw, tier, aff, level)
+        return head + (aff, level, tier)
     return sorted(cards, key=key)
