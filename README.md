@@ -58,7 +58,7 @@ python main_debug.py
 鏡像迷宮地圖的節點類型用 `assets/lc/map_*.png` 辨識 (已附 `map_event` 事件、`map_battle` 戰鬥、`map_abno` 異想體、`map_elite` 精英戰鬥、`map_boss` 頭目)。
 遇到不認得的節點，會把圖示存到 `screenshots/map_nodes/unknown_*.png`，
 把它改名放進 `assets/lc/`：`map_abno.png` 異想體、`map_elite.png` 精英戰鬥、`map_shop.png` 商店、
-`map_rest.png` 休息、`map_boss.png` 頭目，下次就認得了。
+`map_boss.png` 頭目，下次就認得了。
 
 建好後把 `assets/lc/*.png` 一起 commit，打包時就會帶進去。
 

@@ -14,7 +14,7 @@ from src.lc.layout import (PACK_DRAG_FROM_Y, PACK_DRAG_TO_Y, PACK_MODE_ARROW, PA
                            GRACE_COL_X, GRACE_NAMES, GRACE_PLUS_DX, GRACE_PLUS_Y,
                            GRACE_PLUSPLUS_DX, GRACE_ROW_Y, TEXT,
                            EVENT_OPTION_GAP, EVENT_SKIP_BTN, NODE_ENTER_BTN,
-                           FINISH_CLAIM_BTN, PARALLEL_CANCEL, WEEKLY_CANCEL, WEEKLY_CONFIRM,
+                           END_REWARD_CLAIM, FINISH_CLAIM_BTN, PARALLEL_CANCEL, WEEKLY_CANCEL, WEEKLY_CONFIRM,
                            JUDGE_SINNER_DX, JUDGE_SINNER_X0, JUDGE_SINNER_Y,
                            MAP_CENTER, MAP_ZOOM_SCROLLS, NODE_MATCH_THRESHOLD, NODE_TYPES, NODE_UNKNOWN)
 from src.tasks.LimbusBaseTask import TEMPLATE_DIR, LimbusBaseTask, TaskFailed
@@ -33,6 +33,8 @@ OBSERVE_SLOTS = 3
 MODE_KEEP, MODE_HARD, MODE_NORMAL = '不切換', '困难', '普通'
 NODE_DEFAULT = ['事件', '戰鬥', '異想體']
 SETTINGS_GROUP, SHOW_ALL = 'Settings Group', '全部顯示'
+BATTLE_TAP = (0.5, 0.45)     # 戰鬥卡住時點的位置 (畫面中間偏上，避開下方技能列)
+BATTLE_IDLE_TAP = 20         # 戰鬥中幾秒沒變化就點一下
 UNKNOWN_NODE_DIR = Path('screenshots') / 'map_nodes'
 EVENT_LOG_DIR = Path('screenshots') / 'event_options'
 EVENT_DEFAULT = list(vision.EVENT_KINDS)
@@ -195,10 +197,10 @@ class MirrorDungeonTask(MirrorShopMixin, MirrorRewardMixin, LimbusBaseTask):
         self.config_type['Reward Gift Basis']['sub_configs'] = {
             '苦難': ['Affliction Priority'], '飾品': ['Reward Keywords']}
         self.config_type['Shop Enable'] = {'sub_configs': {True: [
-            'Shop Min Money', 'Shop Keywords', 'Shop Tiers', 'Shop Refreshes', 'Shop Enhance', 'Shop Fuse']}}
+            'Shop Min Money', 'Shop Keywords', 'Shop Keyword Any Tier', 'Shop Tiers', 'Shop Refreshes', 'Shop Enhance', 'Shop Fuse']}}
         self.config_type['Shop Enhance'] = {'sub_configs': {True: ['Enhance Level']}}
         self.config_type['Shop Fuse'] = {'sub_configs': {True: [
-            'Fuse Targets', 'Fuse Keep Target Keywords', 'Fuse Material Tiers', 'Fuse Skip Enhanced',
+            'Fuse Targets', 'Fuse Keep Shop Keywords', 'Fuse Material Tiers', 'Fuse Skip Enhanced',
             'Fuse Max Times', 'Fuse Keyword', 'Fuse Tiers']}}
         self.config_type[SETTINGS_GROUP] = {
             'type': 'drop_down', 'options': choices,
@@ -1140,6 +1142,7 @@ class MirrorDungeonTask(MirrorShopMixin, MirrorRewardMixin, LimbusBaseTask):
             self.log_info('戰鬥中，接著打')
         timeout = self.config.get('Battle Timeout (s)', 400)
         start, result = time.time(), None
+        stuck_presses, last_change = 0, time.time()
         while time.time() - start < timeout:
             self.next_frame()
             if self.handle_parallel():
@@ -1156,10 +1159,20 @@ class MirrorDungeonTask(MirrorShopMixin, MirrorRewardMixin, LimbusBaseTask):
             if self.handle_rewards() or self.handle_gift_popup():
                 continue
             if self.in_input_phase():
+                if stuck_presses >= 2:
+                    # 按了 P + Enter 還停在出指令階段：多半是有互動文字 / 選項擋著，點一下畫面
+                    self.log_info('P + Enter 沒反應，點一下畫面')
+                    self.click_relative(*BATTLE_TAP, after_sleep=1.5)
+                    stuck_presses = 0
+                    continue
                 self.send_key('p', after_sleep=0.5)
                 self.send_key('enter', after_sleep=3)
                 self.info_incr('回合')
+                self.next_frame()
+                stuck_presses = stuck_presses + 1 if self.in_input_phase() else 0
+                last_change = time.time()
                 continue
+            stuck_presses = 0
             if self.on_battle_team_screen():   # 開戰沒反應，再按一次
                 self.click_pos('to_battle', after_sleep=3)
                 continue
@@ -1168,6 +1181,13 @@ class MirrorDungeonTask(MirrorShopMixin, MirrorRewardMixin, LimbusBaseTask):
             confirm = self.ocr_roi('lower_half', TEXT['confirm'])
             if confirm:
                 self.click_box(confirm, after_sleep=2)
+                last_change = time.time()
+                continue
+            if time.time() - last_change > BATTLE_IDLE_TAP:
+                # 很久都不是出指令階段：可能卡在戰鬥中的對話 / 互動文字，點一下畫面
+                self.log_info(f'{BATTLE_IDLE_TAP} 秒沒有變化，點一下畫面')
+                self.click_relative(*BATTLE_TAP, after_sleep=1.5)
+                last_change = time.time()
                 continue
             self.sleep(1)
         self.screenshot('fail_md_battle')
@@ -1204,6 +1224,15 @@ class MirrorDungeonTask(MirrorShopMixin, MirrorRewardMixin, LimbusBaseTask):
             if self.ocr_roi('weekly_bonus', TEXT['weekly_bonus']):
                 self.log_info('每周加成：' + ('使用' if use_weekly else '不使用'))
                 self.click_relative(*(WEEKLY_CONFIRM if use_weekly else WEEKLY_CANCEL), after_sleep=2.5)
+                continue
+            if self.ocr_roi('end_reward_title', TEXT['end_reward_title']):
+                # 「探索结束奖励」視窗：按右下「领取」(後面的「领取奖励」被擋住，點了沒用)
+                claim = self.ocr_roi('end_reward_claim', TEXT['claim'])
+                self.log_info('探索结束奖励：领取')
+                if claim:
+                    self.click_box(claim[0], after_sleep=2.5)
+                else:
+                    self.click_relative(*END_REWARD_CLAIM, after_sleep=2.5)
                 continue
             confirm = self.ocr_roi('center', TEXT['confirm'])
             if confirm:

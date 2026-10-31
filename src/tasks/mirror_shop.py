@@ -32,7 +32,8 @@ SHOP_DEFAULTS = {
     'Fuse Material Tiers': ['1', '2'],
     'Fuse Skip Enhanced': True,
     'Fuse Targets': [],
-    'Fuse Keep Target Keywords': True,
+    'Fuse Keep Shop Keywords': True,
+    'Shop Keyword Any Tier': True,
     'Fuse Max Times': 3,
 }
 SHOP_TYPES = {
@@ -55,7 +56,8 @@ SHOP_DESCRIPTIONS = {
     'Shop Fuse': '用「合成饰品」把低等級饰品合成高等級 (會消耗材料饰品)',
     'Fuse Targets': '合成目標 (可多個，越上面越先做)：用目標的關鍵詞和等級合成，已經拿到的目標會略過。'
                     '有設目標時不看下面的 Fuse Keyword / Fuse Tiers',
-    'Fuse Keep Target Keywords': '不拿目標關鍵詞的饰品當材料 (例如目標是呼吸法，就不消耗呼吸法饰品)',
+    'Fuse Keep Shop Keywords': '不拿 Shop Keywords 裡那些關鍵詞的饰品當合成材料 (例如有勾呼吸法，就不消耗呼吸法饰品)',
+    'Shop Keyword Any Tier': '符合 Shop Keywords 的饰品不管等級都買 (Shop Tiers 只限制其他饰品)；讀不到等級也照買',
     'Fuse Max Times': '每次進商店最多合成幾次',
     'Fuse Keyword': '沒設合成目標時，合成出來的饰品關鍵詞',
     'Fuse Material Tiers': '哪些等級的饰品可以拿去當合成材料 (預設 1、2 級)',
@@ -131,10 +133,11 @@ class MirrorShopMixin:
         self.log_info('進入商店')
         if self.config.get('Shop Enable', True):
             self.shop_buy()
-            if self.config.get('Shop Enhance', True):
-                self.shop_enhance()
+            # 先合成再強化 (不要先花錢強化掉之後要拿去合成的材料)
             if self.config.get('Shop Fuse', False):
                 self.shop_fuse()
+            if self.config.get('Shop Enhance', True):
+                self.shop_enhance()
         self.leave_shop()
 
     def leave_shop(self):
@@ -200,7 +203,8 @@ class MirrorShopMixin:
             self.info_set('商店', '、'.join(f'{it.name or "?"}({gifts.TIER_NAMES.get(it.tier, "?")}/'
                                            f'{it.keyword or "?"}/{it.price})' for it in items if it.tier or it.price))
             wanted = [it for it in shop.wanted_items(items, keywords, tiers, money,
-                                                     self.config.get('Wanted Gifts', []))
+                                                     self.config.get('Wanted Gifts', []),
+                                                     self.config.get('Shop Keyword Any Tier', True))
                       if (it.name, it.price) not in tried]
             if wanted:
                 item = wanted[0]
@@ -309,7 +313,8 @@ class MirrorShopMixin:
             self.log_info('合成目標都拿到了，不合成')
             return
         # 目標的關鍵詞要留著，不拿去當材料
-        avoid = {kw for kw, _, _ in plans} if self.config.get('Fuse Keep Target Keywords', True) else set()
+        # Shop Keywords 是你在養的關鍵詞，這些饰品不拿去當材料
+        avoid = set(self.config.get('Shop Keywords', [])) if self.config.get('Fuse Keep Shop Keywords', True) else set()
         materials = {int(t) for t in self.config.get('Fuse Material Tiers', ['1', '2'])}
         skip_enhanced = self.config.get('Fuse Skip Enhanced', True)
         self.click_relative(*SHOP_FUSE_BTN, after_sleep=2)

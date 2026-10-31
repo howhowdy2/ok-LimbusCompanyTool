@@ -48,7 +48,7 @@ class ShopItem:
     name: str = ''
 
 
-def wanted_items(items, keywords, tiers, money, wanted=None):
+def wanted_items(items, keywords, tiers, money, wanted=None, keyword_any_tier=False):
     """要買的饰品，依優先順序：「想要的饰品」清單裡的 (照清單順序) → 關鍵詞在設定裡的順序 → 等級高的 → 便宜的。
 
     keywords / tiers 空的 = 不限；想要清單裡的饰品不受關鍵詞 / 等級限制。
@@ -61,6 +61,9 @@ def wanted_items(items, keywords, tiers, money, wanted=None):
             continue
         if gifts.wanted_rank(item.name, wanted) is not None:
             result.append(item)
+            continue
+        if keyword_any_tier and keywords and item.keyword in keywords:
+            result.append(item)       # 想要的關鍵詞：不看等級 (讀不到等級也買)
             continue
         if item.tier is None:
             continue

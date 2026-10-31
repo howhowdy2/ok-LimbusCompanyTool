@@ -48,6 +48,9 @@ class MirrorRewardMixin:
 
     def handle_rewards(self) -> bool:
         """畫面是獎勵選擇就處理掉，回傳 True。"""
+        # 選完獎勵卡跳出的「获得E.G.O饰品!」會蓋在獎勵卡畫面上，要先按掉，不然會一直重選
+        if self.handle_gift_popup():
+            return True
         if self.ocr_roi('reward_card_title', TEXT['reward_card_title']):
             self.choose_reward_cards()
             return True
@@ -77,6 +80,10 @@ class MirrorRewardMixin:
             else:
                 cards.append((cx, b.name))
         n = self.picks_left('reward_card_count')
+        if n == 0 and not cards:
+            # 已經選好了 (可选择 1/1)，只差確認
+            self.click_relative(*REWARD_CARD_CONFIRM, after_sleep=2)
+            return
         priority = [str(x).strip() for x in self.config.get('Reward Card Priority', rewards.CARD_KINDS)]
         ranked = sorted(cards, key=lambda c: priority.index(rewards.classify_card(c[1]))
                         if rewards.classify_card(c[1]) in priority else len(priority))

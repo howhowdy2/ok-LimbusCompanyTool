@@ -290,6 +290,8 @@ class RewardTest(unittest.TestCase):
         self.assertEqual('飾品', rewards.classify_card('随机获得一件2级E.G.O饰品'))
         self.assertEqual('機率飾品', rewards.classify_card('有50%概率获得E.G.O饰品'))
         self.assertEqual('經費', rewards.classify_card('获得100经费'))
+        self.assertEqual('機率飾品', rewards.classify_card('获得55~83 经费 33%概率获得一件2~3级的震颤E.G.O饰品'))
+        self.assertEqual('飾品', rewards.classify_card('随机获得一件2~3级 E.G.O饰品'))
 
     def test_rank_by_affliction(self):
         from src.lc.rewards import AFFLICTION_DEFAULT, GiftReward, rank_gift_rewards
@@ -382,6 +384,12 @@ class GiftDataTest(unittest.TestCase):
                      (3, 1, '流血', True), (4, 4, '流血', False)]
         pool = shop.fuse_materials(on_screen, {1, 2}, {'呼吸法'}, True)
         self.assertEqual([1, 2], [g[0] for g in pool])
+
+    def test_keyword_any_tier(self):
+        from src.lc.shop import ShopItem, wanted_items
+        items = [ShopItem(0, 3, '沉沦', 200, 'a'), ShopItem(1, None, '沉沦', 150, 'b'), ShopItem(2, 1, '充能', 100, 'c')]
+        self.assertEqual({0, 1}, {i.index for i in wanted_items(items, ['沉沦'], [1], 500, [], True)})
+        self.assertEqual(set(), {i.index for i in wanted_items(items, ['沉沦'], [1], 500, [], False)})
 
     def test_wanted_first_in_shop(self):
         from src.lc.shop import ShopItem, wanted_items

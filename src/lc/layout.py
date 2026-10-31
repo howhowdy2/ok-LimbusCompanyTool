@@ -116,7 +116,9 @@ ROI = {
     'parallel_title': (0.30, 0.22, 0.70, 0.55),    # 第 5 層打完的「平行叠加模式」
     'finish_title': (0.07, 0.12, 0.31, 0.23),      # 「探索完成」
     'finish_claim': (0.80, 0.78, 0.97, 0.88),      # 「领取奖励」
-    'weekly_bonus': (0.30, 0.42, 0.70, 0.54),      # 「要消耗"每周加成"以领取额外奖励吗?」
+    'weekly_bonus': (0.30, 0.42, 0.70, 0.54),
+    'end_reward_title': (0.38, 0.13, 0.62, 0.21),  # 「探索结束奖励」視窗
+    'end_reward_claim': (0.60, 0.72, 0.79, 0.79),  # 視窗右下「领取」(左邊是放弃奖励 / 返回玻璃窗，不要點)      # 「要消耗"每周加成"以领取额外奖励吗?」
     'node_enter': (0.80, 0.69, 0.97, 0.82),        # 點節點後右下的「进入」
     'event_skip': (0.80, 0.84, 0.97, 0.95),        # 事件畫面右下「SKIP」
     'event_options_title': (0.52, 0.13, 0.70, 0.23),   # 「选项」
@@ -192,7 +194,6 @@ NODE_TYPES = {
     '異想體': 'map_abno',
     '精英戰鬥': 'map_elite',
     '商店': 'map_shop',
-    '休息': 'map_rest',
     '頭目': 'map_boss',
 }
 NODE_UNKNOWN = '未知'
@@ -241,6 +242,7 @@ GIFT_REWARD_CLICK_Y = 0.45
 GIFT_TAG_TO_CENTER = -0.048        # 「获得E.G.O饰品」標籤中心 → 卡片中心 x
 PARALLEL_CANCEL = (0.42, 0.655)
 FINISH_CLAIM_BTN = (0.8975, 0.831)
+END_REWARD_CLAIM = (0.6935, 0.757)
 WEEKLY_CONFIRM, WEEKLY_CANCEL = (0.61, 0.685), (0.415, 0.685)
 GIFT_REWARD_SELECT = (0.888, 0.804)
 GIFT_REWARD_TIER = (-0.035, 0.27, 0.012, 0.34)       # 等級 (相對卡片中心 x 的 x0, y0, x1, y1)
@@ -292,6 +294,8 @@ TEXT = {
     'finish': ['探索完成', 'Exploration Complete'],
     'claim_reward': ['领取奖励', 'Claim'],
     'weekly_bonus': ['每周加成', 'Weekly'],
+    'end_reward_title': ['探索结束奖励', '结束奖励'],
+    'claim': ['领取', 'Claim'],
     'cancel': ['取消', 'Cancel'],
     'judge_title': ['进行判定', '选择一位罪人'],
     'judge_go': ['进行判定', '判定', '继续', 'Continue'],

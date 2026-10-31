@@ -20,13 +20,16 @@ AFFLICTION_DEFAULT = ['体力上限', '生长', '防御等级', '守备', '攻�
 
 
 def classify_card(text: str) -> str:
+    """獎勵卡說明分類。一張卡可能同時有經費和機率饰品 (「获得55~83经费 33%概率获得一件…饰品」)，
+    這種算「機率飾品」，才不會排在「直接獲得饰品」前面。"""
     text = normalize_name(text)
     if '星芒' in text:
         return CARD_STAR
+    chance = '概率' in text or '几率' in text or '机率' in text or '%' in text
+    if '饰品' in text:
+        return CARD_CHANCE_GIFT if chance else CARD_GIFT
     if '经费' in text:
         return CARD_MONEY
-    if '饰品' in text:
-        return CARD_CHANCE_GIFT if ('概率' in text or '几率' in text or '机率' in text) else CARD_GIFT
     return CARD_OTHER
 
 
